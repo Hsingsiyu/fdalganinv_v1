@@ -165,18 +165,6 @@ def training_loop(
             E.net.train()
             opt_schedule.step()
 
-        # D_loss_real /= train_dataloader.__len__()
-        # D_loss_fake /= train_dataloader.__len__()
-        # D_loss_grad /= train_dataloader.__len__()
-        # E_loss_rec /= train_dataloader.__len__()
-        # E_loss_adv /= train_dataloader.__len__()
-        # E_loss_feat /= train_dataloader.__len__()
-        # log_message_ep = f'D-[real:{D_loss_real:.3f}, fake:{D_loss_fake:.3f}, gp:{D_loss_grad:.3f}], ' \
-        #                  f'G-[pix:{E_loss_rec:.3f}, feat:{E_loss_feat:.3f}, adv:{E_loss_adv:.3f}]'
-        # if logger:
-        #     logger.debug(f'Epoch: {epoch:03d}, '
-        #                  f'lr: {learning_rate:.2e}, '
-        #                  f'{log_message_ep}')
         if epoch % 10 == 0:
             save_filename = f'styleganinv_encoder_epoch_{epoch:03d}'
             save_filepath = os.path.join(config.save_models, save_filename)

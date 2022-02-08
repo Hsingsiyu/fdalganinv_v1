@@ -145,12 +145,8 @@ class fDALDivergenceHead(nn.Module):
         """
         :param features_s: features extracted by backbone on source data.
         :param features_t: features extracted by backbone on target data.
-        :param pred_src: prediction on src data (for classification tasks should be N,n_classes (logits))
-        :param pred_trg: prediction on trg data (for classification tasks should be N,n_classes (logits))
         :return: fdal loss
         """
-
-
 
         # h'(g(x)) auxiliary head output on source and target respectively.
         features_s=self.grl(features_s)

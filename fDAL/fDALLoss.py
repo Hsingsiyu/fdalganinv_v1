@@ -34,9 +34,9 @@ class fDALLoss(nn.Module):
         v_t = y_t_adv
 
 
-        l_s=self.l_func(v_s,y_s.detach())  #l(h'GE(x).hGE(x))
+        l_s=self.l_func(v_s,y_s.detach())  #l(h'GE(x).hGE(x))   # why? 我这里不是对h‘进行了grl吗 为啥对y还要detach?
         l_t=self.l_func(v_t,y_t.detach())
-        dst = self.gammaw * torch.mean(self.gf(l_s)) - torch.mean(self.phistar_gf(l_t))   # TODO  self.gf(l_s)
+        dst = self.gammaw * torch.mean(self.gf(l_s)) - torch.mean(self.phistar_gf(l_t))
         #dst = self.gammaw * torch.mean(l_s) - torch.mean(self.phistar_gf(l_t))
 
 
@@ -44,10 +44,6 @@ class fDALLoss(nn.Module):
         self.internal_stats['lhattrg'] = torch.mean(l_t).item()
         self.internal_stats['acc'] = self.domain_discriminator_accuracy
         self.internal_stats['dst'] = dst.item()
-        # self.internal_stats['y_s']=y_s
-        # self.internal_stats['y_t'] = y_t
-        # self.internal_stats['y_s_adv'] = y_s_adv
-        # self.internal_stats['y_t_adv'] = y_t_adv
 
         # we need to negate since the obj is being minimized, so min -dst =max dst.
         # the gradient reversar layer will take care of the rest

@@ -40,7 +40,7 @@ class fDALLearner(nn.Module):
         ## todo fix param
         for p in self.taskhead.parameters():
             p.requires_grad = False
-        for p in self.G.net.synthesis.parameters():# 只是害怕！待确定
+        for p in self.G.parameters():# 只是害怕！待确定
             p.requires_grad = False
         for p in self.auxhead.parameters():
             p.requires_grad=True

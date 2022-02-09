@@ -125,8 +125,8 @@ def training_loop(
             loss.backward()
             # TODO  :clip grad norm?
             optimizer.step()
-            log_message= f"[Task Loss:(pixel){loss_val['pix_loss']:.5f}, code {loss_val['code_loss']:.8f}" \
-                         f"Fdal Loss:{loss_val['fdal_loss']:.8f}] "
+            log_message= f"[Task Loss:(pixel){loss_val['pix_loss']:.5f}, h {loss_val['code_loss']:.8f}" \
+                         f"Fdal Loss:{loss_val['fdal_loss']:.8f},src:{loss_val['fdal_src']:.8f},trg:{loss_val['fdal_trg']:.8f}] "
 
             if logger:
                 logger.debug(f'Epoch:{epoch:03d}, '

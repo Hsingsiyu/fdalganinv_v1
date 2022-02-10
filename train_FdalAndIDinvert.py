@@ -35,7 +35,7 @@ def main():
     parser.add_argument('--save_root', type=str, default='/home/xsy/idinvert_pytorch-mycode/fdaloutput/')
     parser.add_argument('--divergence', type=str, default='kl')
     parser.add_argument('--reg_coef', type=int, default=1)
-    parser.add_argument('--nepoch', type=int, default=100)
+    parser.add_argument('--nepoch', type=int, default=5000)
     parser.add_argument('--vgg', type=bool, default=False)
     parser.add_argument('--learn_rate', type=int, default=0.0001)
     args = parser.parse_args()

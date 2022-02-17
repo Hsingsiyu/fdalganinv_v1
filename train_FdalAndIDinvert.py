@@ -37,7 +37,7 @@ def main():
     parser.add_argument('--reg_coef', type=int, default=1)
     parser.add_argument('--nepoch', type=int, default=3000)
     parser.add_argument('--vgg', type=bool, default=False)
-    parser.add_argument('--learn_rate', type=int, default=0.001)
+    parser.add_argument('--learn_rate', type=int, default=0.00001)
     parser.add_argument('--adam', type=bool, default=False)
     args = parser.parse_args()
 

@@ -10,18 +10,8 @@ class fDALLearner(nn.Module):
                  aux_head=None,
                  grl_params=None,
                  Generator=None,
+                 gpu_ids=None,
                  ):
-        """
-        fDAL Learner.
-        :param backbone: z=backbone(input). Thus backbone must be nn.Module. (i.e Usually resnet without last f.c layers).
-        :param taskhead: prediction = taskhead(z). Thus taskhead must be nn.Module *(e.g The last  f.c layers of Resnet)
-        :param taskloss: he loss used to trained the model. i.e nn.CrossEntropy()
-        :param divergence: divergence name (i.e pearson, jensen).
-        :param reg_coef: the coefficient to weight the domain adaptation loss (fDAL gamma coefficient).
-        :param n_classes: if output is categorical then the number of classes. if <=1 will create a global discriminator.
-        :param aux_head: (optional) if specified with use the provided head as the domain-discriminator. If not will create it based on tashhead as described in the paper.
-        :param grl_params: dict with grl_params.
-        """
         super(fDALLearner, self).__init__()
         self.backbone = backbone
         self.taskhead = taskhead
@@ -37,17 +27,21 @@ class fDALLearner(nn.Module):
         self.batch_size=batchsize
         self.encode_dim=encoderdim
         self.code_loss=nn.L1Loss(reduction='mean')
+        if gpu_ids is not None:
+            assert len(gpu_ids) > 1
+            self.auxhead= nn.DataParallel(self.auxhead, gpu_ids)
         ## todo fix param
-        for p in self.taskhead.parameters():
-            p.requires_grad = False
-        for p in self.G.parameters():# 只是害怕！待确定
-            p.requires_grad = False
-        for p in self.auxhead.parameters():
-            p.requires_grad=True
+        # for p in self.taskhead.parameters():
+        #     p.requires_grad = False
+        # for p in self.G.parameters():# 只是害怕！待确定
+        #     p.requires_grad = False
+        # for p in self.auxhead.parameters():
+        #     p.requires_grad=True
+
     def build_aux_head_(self):
         # fDAL recommends the same architecture for both h, h'
         auxhead = copy.deepcopy(self.taskhead)
-        #TODO 测试参数是否改变！
+        #TODO 测试参数是否改变?
         auxhead.apply(lambda self_: self_.reset_parameters() if hasattr(self_, 'reset_parameters') else None)
         return auxhead
 
@@ -86,14 +80,19 @@ class fDALLearner(nn.Module):
         # reconstruct image  G(E(x))
         xrec_s=self.G(z_s)
         xrec_t=self.G(z_t)
+        #TODO:save(x_recs,x_rect)
+
         #  hGE(x)
         outputs_src =self.taskhead(xrec_s)
         outputs_tgt =self.taskhead(xrec_t)
 
-        source_label=self.taskhead(x_s) #h(x)
+
+        source_label=self.taskhead(x_s) #h(x_S)
+
         # computing losses....
         # task loss in pixel
         task_loss_pix=self.taskloss(x_s,xrec_s) # L(x_s,G(E(x_s)))
+        # task_loss_pix=0
         # task loss in code
         task_loss_z=self.code_loss(outputs_src,source_label) # L(h(x),hGE(x))
         # task loss in target if labels provided. Warning!. Only on semi-sup adaptation.
@@ -107,10 +106,12 @@ class fDALLearner(nn.Module):
             total_loss = task_loss + fdal_loss
         else:
             total_loss = task_loss
-
+        #
+        x_all = torch.cat([x_s, xrec_s, x_t, xrec_t], dim=0)
+        h_all=torch.cat([source_label,outputs_src,outputs_tgt,self.fdal_divhead.internal_stats['hhat_s'],self.fdal_divhead.internal_stats['hhat_t']],dim=0)
         return total_loss, { "pix_loss": task_loss_pix,"code_loss":task_loss_z, "fdal_loss": fdal_loss/self.reg_coeff,
-                            "fdal_src": self.fdal_divhead.internal_stats["lhatsrc"],
-                            "fdal_trg": self.fdal_divhead.internal_stats["lhattrg"]}
+                            "fdal_src": self.fdal_divhead.internal_stats["lsrc"],
+                            "fdal_trg": self.fdal_divhead.internal_stats["ltrg"],"x_all":x_all,"h_all":h_all}
 
     def get_reusable_model(self, pack=False):
         """

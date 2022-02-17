@@ -21,7 +21,7 @@ _AUTO_FUSED_SCALE_MIN_RES = 128
 # Default gain factor for weight scaling.
 _WSCALE_GAIN = np.sqrt(2.0)
 
-from torchinfo import summary
+#from torchinfo import summary
 
 class StyleGANDiscriminator(nn.Module):
     """Defines the discriminator network in StyleGAN.
@@ -89,7 +89,7 @@ class StyleGANDiscriminator(nn.Module):
             res = 2 ** res_log2
             block_idx = self.final_res_log2 - res_log2
 
-            # Input convolution layer for each resolution.
+            # Input convolution layer for each resolution.FromRGB
             self.add_module(
                 f'input{block_idx}',
                 ConvBlock(in_channels=self.image_channels,
@@ -534,6 +534,7 @@ class ConvBlock(nn.Module):
         Raises:
             NotImplementedError: If the `activation_type` is not supported.
         """
+
         super().__init__()
 
         if minibatch_std_group_size > 1:

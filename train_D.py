@@ -70,7 +70,7 @@ parser.add_argument("--b2", type=float, default=0.99, help="adam: decay of first
 parser.add_argument("--sample_interval", type=int, default=400, help="interval betwen image samples")
 parser.add_argument("--image_size", type=int, default=256, help="interval betwen image samples")
 parser.add_argument("--data_root", type=str, default='/home/xsy/FFHQ', help="path")
-parser.add_argument("--save_step", type=int, default=50) 
+parser.add_argument("--save_step", type=int, default=50)
 parser.add_argument('--save_root', type=str, default='/home/xsy/idinvert_pytorch-mycode/trainStyleD_output/')
 
 opt = parser.parse_args()

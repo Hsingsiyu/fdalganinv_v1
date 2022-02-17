@@ -22,7 +22,7 @@ class fDALLoss(nn.Module):
         self.gammaw = gamma
         self.phistar_gf = lambda t: ConjugateDualFunction(divergence_name).fstarT(t)
         self.gf = lambda v: ConjugateDualFunction(divergence_name).T(v)
-        self.l_func=nn.MSELoss(reduction='none')  #TODO  reduction 'none' return a vector?
+        self.l_func=nn.L1Loss(reduction='none')  #TODO  reduction 'none' return a vector?
 
     def forward(self, y_s, y_t, y_s_adv, y_t_adv, K):
         # ---
@@ -33,17 +33,21 @@ class fDALLoss(nn.Module):
         v_s = y_s_adv
         v_t = y_t_adv
 
+        # l_s = self.l_func(v_s, y_s.detach())  # l(h'GE(x).hGE(x))   # why? 我这里不是对h‘进行了grl吗 为啥对y还要detach?
+        # l_t = self.l_func(v_t, y_t.detach())
 
-        l_s=self.l_func(v_s,y_s.detach())  #l(h'GE(x).hGE(x))   # why? 我这里不是对h‘进行了grl吗 为啥对y还要detach?
-        l_t=self.l_func(v_t,y_t.detach())
-        dst = self.gammaw * torch.mean(self.gf(l_s)) - torch.mean(self.phistar_gf(l_t))
+        l_s = self.l_func(v_s, y_s)  # l(h'GE(x).hGE(x))   # why? 我这里不是对h‘进行了grl吗 为啥对y还要detach?
+        l_t = self.l_func(v_t, y_t)
+        dst = self.gammaw * torch.mean(l_s) - torch.mean(self.phistar_gf(l_t))
         #dst = self.gammaw * torch.mean(l_s) - torch.mean(self.phistar_gf(l_t))
 
-
-        self.internal_stats['lhatsrc'] = torch.mean(l_s).item()
-        self.internal_stats['lhattrg'] = torch.mean(l_t).item()
+        self.internal_stats['lsrc'] = torch.mean(l_s).item()
+        self.internal_stats['ltrg'] = torch.mean(l_t).item()
         self.internal_stats['acc'] = self.domain_discriminator_accuracy
         self.internal_stats['dst'] = dst.item()
+        #checkpoint
+        self.internal_stats['hhat_s']=y_s_adv
+        self.internal_stats['hhat_t']=y_t_adv
 
         # we need to negate since the obj is being minimized, so min -dst =max dst.
         # the gradient reversar layer will take care of the rest

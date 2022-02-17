@@ -128,7 +128,8 @@ class ConjugateDualFunction:
         elif self.f_div_name == "hellinger":
             return torch.exp(-v) - 1.0
         elif self.f_div_name == "jensen":
-            return F.softplus(v) - log(2.0)
+            # return F.softplus(v) - log(2.0)
+            return -torch.log(2-torch.exp(v))#???
         elif self.f_div_name == "gammajensen":
             gf = lambda v_: -self.gamma * log(self.gamma) - F.softplus(-v_)
             return -torch.log(self.gamma + 1. - self.gamma * torch.exp(gf(v))) / self.gamma

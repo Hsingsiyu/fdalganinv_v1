@@ -32,7 +32,7 @@ def weight_init(m):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)
 def mytask_loss_(x, x_rec,cuda=False):
-    loss = torch.nn.L1Loss()
+    loss = torch.nn.MSELoss()
     error=loss(x,x_rec)
     return error
 def training_loop(
@@ -75,11 +75,14 @@ def training_loop(
     D.train()
     D=D.cuda()
 
+    D_hat=copy.deepcopy(D)
+    D_hat.apply(lambda self_: self_.reset_parameters() if hasattr(self_, 'reset_parameters') else None)
+
     encode_dim = [G.num_layers, G.w_space_dim]
 
     #fDAL
     learner = fDALLearner(backbone=E.net, taskhead=D, taskloss=mytask_loss_, divergence=config.divergence,batchsize=config.train_batch_size,encoderdim=encode_dim, reg_coef=config.reg_coef, n_classes=-1,
-                          grl_params={"max_iters": int((config.nepoch)*len(train_dataloader)), "hi": 0.6, "auto_step": True},Generator=G.net.synthesis,gpu_ids=config.gpu_ids # ignore for defaults.
+                          grl_params={"max_iters": int((config.nepoch)*len(train_dataloader)), "hi": 0.9, "auto_step": True},Generator=G.net.synthesis,gpu_ids=config.gpu_ids # ignore for defaults.
                           )
 
     if config.adam:
@@ -94,7 +97,7 @@ def training_loop(
     global_step = 0
     for epoch in range(max_epoch):
         for step, items in enumerate(train_dataloader):
-            E.net.train()
+            learner.backbone.train()
             x_s=items['x_s']
             x_t=items['x_t']
             x_s=x_s.float().cuda()
@@ -106,17 +109,16 @@ def training_loop(
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(learner.backbone.parameters(), 10)
             torch.nn.utils.clip_grad_norm_(learner.auxhead.parameters(), 10)
-
             optimizer.step()
             optimizer_E.step()
 
             log_message= f"[Task Loss:(pixel){loss_val['pix_loss']:.5f}, h {loss_val['code_loss']:.8f}" \
-                         f",Fdal Loss:{loss_val['fdal_loss']:.8f},src:{loss_val['fdal_src']:.8f},trg:{loss_val['fdal_trg']:.8f}] "
-            # save_filename = f'epoch_{epoch:03d}_step_{step:04d}_train.png'
-            # save_filepath = os.path.join(config.save_images, save_filename)
-            # with torch.no_grad():
-            #     tvutils.save_image(tensor=loss_val['x_all'], fp=save_filepath, nrow=config.train_batch_size, normalize=True,
-            #                    scale_each=True)
+                         f", Fdal Loss:{loss_val['fdal_loss']:.5f},src:{loss_val['fdal_src']:.5f},trg:{loss_val['fdal_trg']:.5f}] "
+            save_filename = f'train_epoch_{epoch:03d}_step_{step:04d}.png'
+            save_filepath = os.path.join(config.save_images, save_filename)
+            with torch.no_grad():
+                tvutils.save_image(tensor=loss_val['x_all'], fp=save_filepath, nrow=config.train_batch_size, normalize=True,
+                               scale_each=True)
             # np.savetxt(os.path.join(config.save_logs+f'h_output_epoch_{epoch:03d}_step_{step:04d}.txt'), loss_val["h_all"].cpu().detach().numpy(), fmt='%.6f', delimiter=',')
             if logger:
                 logger.debug(f'Epoch:{epoch:03d}, '
@@ -132,7 +134,7 @@ def training_loop(
                 writer.add_scalar('fDAL/trg', loss_val["fdal_trg"], global_step=global_step)
 
             if global_step % image_snapshot_ticks == 0:
-                E.net.eval()
+                learner.backbone.eval()
                 for val_step, val_items in enumerate(val_dataloader):
                     # FIXME
                     with torch.no_grad():
@@ -140,10 +142,10 @@ def training_loop(
                         x_val = x_val.float().cuda()
                         batch_size_val = x_val.shape[0]
                         x_train = x_s[:batch_size_val, :, :, :]
-                        z_train = E.net(x_train).view(batch_size_val, *encode_dim)
-                        x_rec_train = G.net.synthesis(z_train)
-                        z_val = E.net(x_val).view(batch_size_val, *encode_dim)
-                        x_rec_val = G.net.synthesis(z_val)
+                        z_train = learner.backbone(x_train).view(batch_size_val, *encode_dim)
+                        x_rec_train = learner.G(z_train)
+                        z_val = learner.backbone(x_val).view(batch_size_val, *encode_dim)
+                        x_rec_val = learner.G(z_val)
                         x_all = torch.cat([x_val, x_rec_val, x_train, x_rec_train], dim=0)
                     torch.save(loss_val["h_all"].cpu().detach(),
                                os.path.join(config.save_logs, f'h_output_epoch_{epoch:03d}_step_{step:04d}.pt'))

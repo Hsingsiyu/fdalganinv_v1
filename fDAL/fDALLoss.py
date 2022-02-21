@@ -33,11 +33,11 @@ class fDALLoss(nn.Module):
         v_s = y_s_adv
         v_t = y_t_adv
 
-        # l_s = self.l_func(v_s, y_s.detach())  # l(h'GE(x).hGE(x))   # why? 我这里不是对h‘进行了grl吗 为啥对y还要detach?
-        # l_t = self.l_func(v_t, y_t.detach())
+        l_s = self.l_func(v_s, y_s.detach())  # l(h'GE(x).hGE(x))   # why? 我这里不是对h‘进行了grl吗 为啥对y还要detach?
+        l_t = self.l_func(v_t, y_t.detach())
 
-        l_s = self.l_func(v_s, y_s)  # l(h'GE(x).hGE(x))   # why? 我这里不是对h‘进行了grl吗 为啥对y还要detach?
-        l_t = self.l_func(v_t, y_t)
+        # l_s = self.l_func(v_s, y_s)  # l(h'GE(x).hGE(x))   # why? 我这里不是对h‘进行了grl吗 为啥对y还要detach?
+        # l_t = self.l_func(v_t, y_t)
         dst = self.gammaw * torch.mean(l_s) - torch.mean(self.phistar_gf(l_t))
         #dst = self.gammaw * torch.mean(l_s) - torch.mean(self.phistar_gf(l_t))
 

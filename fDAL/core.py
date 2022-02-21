@@ -4,6 +4,14 @@ from .fDALLoss import fDALLoss
 from .utils import WarmGRL
 import torch
 import copy
+def weight_init(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_normal_(m.weight)
+    elif isinstance(m, nn.Conv2d):
+        nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+    elif isinstance(m, nn.BatchNorm2d):
+        nn.init.constant_(m.weight, 1)
+        nn.init.constant_(m.bias, 0)
 
 class fDALLearner(nn.Module):
     def __init__(self, backbone, taskhead, taskloss, divergence, batchsize,encoderdim,bootleneck=None, reg_coef=1, n_classes=-1,
@@ -20,6 +28,7 @@ class fDALLearner(nn.Module):
         self.n_classes = n_classes
         self.reg_coeff = reg_coef
         self.auxhead = aux_head if aux_head is not None else self.build_aux_head_()
+        # self.auxhead.apply(weight_init)
         self.G=Generator
         self.fdal_divhead = fDALDivergenceHead(divergence, self.auxhead, n_classes=self.n_classes,
                                                grl_params=grl_params,
@@ -31,13 +40,18 @@ class fDALLearner(nn.Module):
             assert len(gpu_ids) > 1
             self.auxhead= nn.DataParallel(self.auxhead, gpu_ids)
         ## todo fix param
-        # for p in self.taskhead.parameters():
-        #     p.requires_grad = False
-        # for p in self.G.parameters():# 只是害怕！待确定
-        #     p.requires_grad = False
-        # for p in self.auxhead.parameters():
-        #     p.requires_grad=True
-
+        for p in self.taskhead.parameters():
+            p.requires_grad = False
+        for p in self.G.parameters():# 只是害怕！待确定
+            p.requires_grad = False
+        for p in self.auxhead.parameters():
+            p.requires_grad=True
+        print('hat h:')
+        for parameters in self.auxhead.parameters():
+            print(parameters)
+        # print('fixed h:')
+        # for parameters in self.taskhead.parameters():
+        #     print(parameters)
     def build_aux_head_(self):
         # fDAL recommends the same architecture for both h, h'
         auxhead = copy.deepcopy(self.taskhead)

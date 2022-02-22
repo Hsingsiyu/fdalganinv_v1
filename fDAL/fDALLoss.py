@@ -22,7 +22,7 @@ class fDALLoss(nn.Module):
         self.gammaw = gamma
         self.phistar_gf = lambda t: ConjugateDualFunction(divergence_name).fstarT(t)
         self.gf = lambda v: ConjugateDualFunction(divergence_name).T(v)
-        self.l_func=nn.L1Loss(reduction='none')  #TODO  reduction 'none' return a vector?
+        self.l_func=nn.L1Loss(reduction='none')
 
     def forward(self, y_s, y_t, y_s_adv, y_t_adv, K):
         # ---

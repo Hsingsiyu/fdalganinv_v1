@@ -94,7 +94,6 @@ class fDALLearner(nn.Module):
         # reconstruct image  G(E(x))
         xrec_s=self.G(z_s)
         xrec_t=self.G(z_t)
-        #TODO:save(x_recs,x_rect)
 
         #  hGE(x)
         outputs_src =self.taskhead(xrec_s)

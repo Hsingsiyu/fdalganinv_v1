@@ -85,13 +85,14 @@ def training_loop(
     D_iters = config.D_iters
     E_iterations=0
     D_iterations=0
-    l_func = nn.L2Loss(reduction='none')
+    l_func = nn.MSELoss(reduction='none')
     phistar_gf = lambda t: fDAL.utils.ConjugateDualFunction(config.divergence).fstarT(t)
+    image_snapshot_step=image_snapshot_ticks
     for epoch in range(max_epoch):
         data_iter = iter(train_dataloader)
         i=0
-        if epoch<20:
-            image_snapshot_step=20
+        if epoch<50:
+            image_snapshot_step=25
         else:
             image_snapshot_step=image_snapshot_ticks
         while i<len(train_dataloader):
@@ -117,11 +118,11 @@ def training_loop(
                 features_s = D(xrec_s)  # h(GE(x_s))
                 features_t = D(xrec_t)  # h(GE(x_s))
 
-                y_s_adv = D_hat(features_s)  # h'(GE(x_s))
-                y_t_adv = D_hat(features_t)  # h'(GE(x_t))
+                features_s_adv = D_hat(xrec_s)  # h'(GE(x_s))
+                features_t_adv = D_hat(xrec_t)  # h'(GE(x_t))
 
-                l_s = l_func(y_s_adv, features_s)
-                l_t = l_func(y_t_adv, features_t)
+                l_s = l_func(features_s_adv, features_s)
+                l_t = l_func(features_t_adv, features_t)
                 dst = torch.mean(l_s) - torch.mean(phistar_gf(l_t))
                 optimizer_Dhat.zero_grad()
                 loss_Dhat = -dst
@@ -130,9 +131,9 @@ def training_loop(
                 optimizer_Dhat.step()
                 D_iterations += 1
                 if writer:
-                    writer.add_scalar('trainD/dst', loss_Dhat, global_step=D_iterations)
-                    writer.add_scalar('trainD/src', l_s, global_step=D_iterations)
-                    writer.add_scalar('trainD/trg', l_t, global_step=D_iterations)
+                    writer.add_scalar('trainD/dst', loss_Dhat.item(), global_step=D_iterations)
+                    writer.add_scalar('trainD/src', l_s.mean().item(), global_step=D_iterations)
+                    writer.add_scalar('trainD/trg', l_t.mean().item(), global_step=D_iterations)
             else:
                 ############################
                 # (2) Update E network
@@ -152,11 +153,11 @@ def training_loop(
                 task_loss_pix = mytask_loss_(x_s, xrec_s)  # L(x_s,G(E(x_s)))
                 task_loss_z = mytask_loss_(features_s, source_label)  # L(h(x),hGE(x))
 
-                y_s_adv =D_hat(features_s)  # h'(GE(x_s))
-                y_t_adv =D_hat(features_t)  # h'(GE(x_t))
+                features_s_adv = D_hat(xrec_s)  # h'(GE(x_s))
+                features_t_adv = D_hat(xrec_t)  # h'(GE(x_t))
 
-                l_s = l_func(y_s_adv, features_s)
-                l_t = l_func(y_t_adv, features_t)
+                l_s = l_func(features_s_adv, features_s)
+                l_t = l_func(features_t_adv, features_t)
                 dst =  torch.mean(l_s) - torch.mean(phistar_gf(l_t))
                 optimizer_E.zero_grad()
                 loss_E=task_loss_pix+task_loss_z+dst
@@ -167,13 +168,13 @@ def training_loop(
                     writer.add_scalar('trainE/pixel', task_loss_pix.item(), global_step=E_iterations)
                     writer.add_scalar('trainE/h',task_loss_z.item(), global_step=E_iterations)
                     writer.add_scalar('trainE/dst', dst.item(), global_step=E_iterations)
-                    writer.add_scalar('trainE/src', l_s.item(), global_step=E_iterations)
-                    writer.add_scalar('trainE/trg', l_t.item(), global_step=E_iterations)
+                    writer.add_scalar('trainE/src', l_s.mean().item(), global_step=E_iterations)
+                    writer.add_scalar('trainE/trg', l_t.mean().item(), global_step=E_iterations)
                 log_message= f"[Task Loss:(pixel){task_loss_pix.cpu().detach().numpy():.5f}, h {task_loss_z.cpu().detach().numpy():.5f}" \
-                             f", Fdal Loss:{dst.cpu().detach().numpy():.5f},src:{l_s.cpu().detach().numpy():.5f},trg:{l_t.cpu().detach().numpy():.5f}] "
+                             f", Fdal Loss:{dst.cpu().detach().numpy():.5f},src:{l_s.mean().cpu().detach().numpy():.5f},trg:{l_t.mean().cpu().detach().numpy():.5f}] "
                 if logger:
                     logger.debug(f'Epoch:{epoch:03d}, '
-                                 f'E Step:{i:04d}, '
+                                 f'E_Step:{i:04d}, '
                                  f'Dlr:{optimizer_Dhat.state_dict()["param_groups"][0]["lr"]:.2e}, '
                                  f'Elr:{optimizer_Dhat.state_dict()["param_groups"][0]["lr"]:.2e}, '
                                  f'{log_message}')
@@ -207,7 +208,7 @@ def training_loop(
                     lr_scheduler_E.step()
             opt_schedule.step()
 
-        if epoch % 50 == 0:
+        if (epoch+1) % 50 == 0:
             save_filename = f'styleganinv_encoder_epoch_{epoch:03d}.pth'
             save_filepath = os.path.join(config.save_models, save_filename)
             if config.gpu_ids is not None:

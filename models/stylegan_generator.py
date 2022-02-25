@@ -34,7 +34,7 @@ class StyleGANGenerator(BaseGenerator):
   (3) W+ space, with dimension (18, 512)
   """
 
-  def __init__(self, model_name, logger=None, gpu_ids=None):
+  def __init__(self, model_name, logger=None, gpu_ids=None,local_rank=None):
     self.gan_type = 'stylegan'
     super().__init__(model_name, logger, gpu_ids)
     self.lod = self.net.synthesis.lod.to(self.cpu_device).tolist()
@@ -43,8 +43,8 @@ class StyleGANGenerator(BaseGenerator):
     self.net.synthesis.to(self.run_device)
     if self.gpu_ids is not None:
         assert len(self.gpu_ids) > 1
-        self.net.synthesis = nn.DataParallel(self.net.synthesis, self.gpu_ids)
-
+        # self.net.synthesis = nn.DataParallel(self.net.synthesis, self.gpu_ids)
+        self.net.synthesis=nn.parallel.DistributedDataParallel(self.net.synthesis,device_ids=[local_rank])
   def build(self):
     self.z_space_dim = getattr(self, 'z_space_dim', 512)
     self.w_space_dim = getattr(self, 'w_space_dim', 512)

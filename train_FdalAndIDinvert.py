@@ -22,26 +22,25 @@ def main():
                         help='the name of the model')
     parser.add_argument('--dataset_name', type=str, default='ffhq',
                         help='the name of the training dataset (defaults; ffhq)')
-    parser.add_argument('--train_batch_size', type=int, default=24,
+    parser.add_argument('--train_batch_size', type=int, default=36,
                         help='training batch size')
     parser.add_argument('--test_batch_size', type=int, default=12,
                         help='training batch size')
-    parser.add_argument('--cuda', type=bool, default=True,
-                        help='to use cuda or not')
-    parser.add_argument('--gpu_ids', type=list, default=[0,1],#None, #[0,1,2,3],
+    parser.add_argument('--gpu_ids', type=list, default=[0,1,2],#None, #[0,1,2,3],
                         help='list of gpus')
-    parser.add_argument('--test_save_step', type=int, default=1,
+    parser.add_argument('--test_save_step', type=int, default=2,
                         help='how much step to be saved when inference')
     parser.add_argument('--save_root', type=str, default='/home/xsy/idinvert_pytorch-mycode/fdaloutput/')
     parser.add_argument('--divergence', type=str, default='pearson',help='pearson,kl')
     parser.add_argument('--reg_coef', type=int, default=1)
-    parser.add_argument('--nepoch', type=int, default=500)
+    parser.add_argument('--nepoch', type=int, default=1000)
     parser.add_argument('--vgg', type=bool, default=False)
-    parser.add_argument('--learn_rate', type=int, default=0.0001)
-    parser.add_argument('--adam', type=bool, default=True)
+    parser.add_argument('--learn_rate', type=int, default=0.00001)
+    parser.add_argument('--adam', type=bool, default=False)
     parser.add_argument('--D_iters', type=int, default=5)
     parser.add_argument('--netE', type=str, default='')
     parser.add_argument('--netD_hat', type=str, default='')
+    parser.add_argument('--local_rank', type=int, default=0,help='node rank for distributed training')
 
     args = parser.parse_args()
 
@@ -69,7 +68,7 @@ def main():
     datasets_args = Config()
 
     opt_args = EasyDict(betas=(0.9, 0.99), eps=1e-8)
-    E_lr_args = EasyDict(learning_rate=0.0001, decay_step=3000, decay_rate=0.8, stair=False)
+    E_lr_args = EasyDict(learning_rate=args.learn_rate, decay_step=3000, decay_rate=0.8, stair=False)
     D_lr_args = EasyDict(learning_rate=args.learn_rate, decay_step=3000, decay_rate=0.8, stair=False)
 
 

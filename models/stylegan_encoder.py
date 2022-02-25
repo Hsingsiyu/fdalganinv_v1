@@ -18,15 +18,15 @@ __all__ = ['StyleGANEncoder']
 class StyleGANEncoder(BaseEncoder):
   """Defines the encoder class of StyleGAN inversion."""
 
-  def __init__(self, model_name, logger=None, gpu_ids=None):
+  def __init__(self, model_name, logger=None, gpu_ids=None,local_rank=None):
     self.gan_type = 'stylegan'
     super().__init__(model_name, logger, gpu_ids)
     # Data Parallel
     self.net.to(self.run_device)
     if self.gpu_ids is not None:
         assert len(self.gpu_ids) > 1
-        self.net = nn.DataParallel(self.net, self.gpu_ids)
-
+        # self.net = nn.DataParallel(self.net, self.gpu_ids)
+        self.net=nn.parallel.DistributedDataParallel(self.net,device_ids=[local_rank])
   def build(self):
     self.w_space_dim = getattr(self, 'w_space_dim', 512)
     self.encoder_channels_base = getattr(self, 'encoder_channels_base', 64)

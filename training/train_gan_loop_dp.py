@@ -20,7 +20,7 @@ import random
 from fDAL.utils import ConjugateDualFunction
 from collections import OrderedDict
 
-
+#TODO 随机数种子怎么搞啊
 def same_seeds(seed):
     random.seed(seed)
     torch.manual_seed(seed)
@@ -52,7 +52,7 @@ def training_loop(
         image_snapshot_ticks=500,
         max_epoch=100
 ):
-    same_seeds(2022)
+    same_seeds(2022)#
     epoch_s=0
     D_iters = config.D_iters
     E_iterations=0

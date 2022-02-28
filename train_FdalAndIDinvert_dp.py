@@ -36,7 +36,7 @@ def main():
     parser.add_argument('--save_root', type=str, default='/home/xsy/idinvert_pytorch-mycode/fdaloutput/')
     parser.add_argument('--divergence', type=str, default='pearson',help='pearson,kl')
     parser.add_argument('--reg_coef', type=int, default=1)
-    parser.add_argument('--nepoch', type=int, default=3000)
+    parser.add_argument('--nepoch', type=int, default=5000)
     parser.add_argument('--vgg', type=bool, default=False)
     parser.add_argument('--learn_rate', type=int, default=0.00001)
     parser.add_argument('--adam', type=bool, default=False)
@@ -66,7 +66,7 @@ def main():
         size = args.image_size
         min_val = -1.0
         max_val = 1.0
-        split=960 #65000
+        split=1000 #65000
     datasets_args = Config()
 
     opt_args = EasyDict(betas=(0.9, 0.99), eps=1e-8)

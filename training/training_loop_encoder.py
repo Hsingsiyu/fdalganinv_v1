@@ -35,11 +35,7 @@ def weight_init(m):
 
 # the difference last col? 
 def div_loss_(D, real_x, fake_x, p=2, cuda=False):
-    # if cuda:
-    #     alpha = torch.rand((real_x.shape[0], 1, 1, 1)).cuda()
-    # else:
-    #     alpha = torch.rand((real_x.shape[0], 1, 1, 1))
-    # x_ = (alpha * real_x + (1 - alpha) * fake_x).requires_grad_(True)
+
     x_ = real_x.requires_grad_(True)
     y_ = D(x_)
     # cal f'(x)
@@ -75,10 +71,6 @@ def div_loss(D, x, y, r1_gamma=10.0, cuda=False):
     return loss
 
 def GAN_loss(scores_out, real=True):
-    # if real:
-    #     return torch.mean(-scores_out)
-    # else:
-    #     return torch.mean(scores_out)
     if real:
         return torch.mean(F.softplus(-scores_out))
     else:
@@ -132,30 +124,27 @@ def training_loop(
     D=StyleGANDiscriminator(config.image_size,fmaps_max=config.d_fmaps_max)
     # init parameter
     D.cuda()
+    D_weigth='/home/xsy/idinvert_pytorch-mycode/trainStyleD_output/styleganffhq256_discriminator_epoch_199.pth'
+    D.load_state_dict(torch.load(D_weigth))
     if config.gpu_ids is not None:
         assert len(config.gpu_ids) > 1
         D = nn.DataParallel(D, config.gpu_ids)
 
     E.net.apply(weight_init)
-    D.apply(weight_init)
-
-    # weight_path='/home/xsy/idinvert_pytorch-mycode/idinvert_output/CelebAHQ-InitEncoder_StyleDJan25_22-10_train_bs_24_epoch500_D_fmap_max512_datasplit2400/save_models/epoch_490_step_0099_test_0006.pth'
-    # checkpoint=torch.load(weight_path)
-    # E.net.module.load_state_dict(checkpoint["E"])
-    # D.module.load_state_dict(checkpoint["D"])
+    # D.apply(weight_init)
 
     G.net.synthesis.eval()
     E.net.train()
     F.net.eval()
-    D.train()
+    D.eval()
 
     encode_dim = [G.num_layers, G.w_space_dim]
 
     # optimizer
     optimizer_E = torch.optim.Adam(E.net.parameters(), lr=E_learning_rate, **opt_args)
-    optimizer_D = torch.optim.Adam(D.parameters(), lr=D_learning_rate, **opt_args)
+    # optimizer_D = torch.optim.Adam(D.parameters(), lr=D_learning_rate, **opt_args)
     lr_scheduler_E = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer_E, gamma=E_lr_args.decay_rate)
-    lr_scheduler_D = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer_D, gamma=D_lr_args.decay_rate)
+    # lr_scheduler_D = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer_D, gamma=D_lr_args.decay_rate)
 
     global_step = 0
     for epoch in range(max_epoch):
@@ -171,30 +160,30 @@ def training_loop(
             x = items
             x = x.float().cuda()
             batch_size = x.shape[0]
-            z = E.net(x).view(batch_size, *encode_dim)#[bn,]
+            z = E.net(x).view(batch_size, *encode_dim)#[bn,*encode_dim]
             x_rec=G.net.synthesis(z)
-            # ===============================
-            #         optimizing D
-            # ===============================
-
-            x_real = D(x)
-            x_fake = D(x_rec.detach())
-            loss_real = GAN_loss(x_real, real=True)
-            loss_fake = GAN_loss(x_fake, real=False)
-            # gradient div
-            loss_gp = div_loss_(D, x, x_rec.detach(), cuda=config.cuda)
-            # loss_gp = div_loss(D, x, x_real)
-
-            D_loss_real += loss_real.item()
-            D_loss_fake += loss_fake.item()
-            D_loss_grad += loss_gp.item()
-            log_message = f'D-[real:{loss_real.cpu().detach().numpy():.3f}, ' \
-                          f'fake:{loss_fake.cpu().detach().numpy():.3f}, ' \
-                          f'gp:{loss_gp.cpu().detach().numpy():.3f}]'
-            D_loss = loss_real_weight * loss_real + loss_fake_weight * loss_fake + loss_gp_weight * loss_gp
-            optimizer_D.zero_grad()
-            D_loss.backward()
-            optimizer_D.step()
+            # # ===============================
+            # #         optimizing D
+            # # ===============================
+            #
+            #
+            # x_real = D(x)
+            # x_fake = D(x_rec.detach())
+            # loss_real = GAN_loss(x_real, real=True)
+            # loss_fake = GAN_loss(x_fake, real=False)
+            # # gradient div
+            # loss_gp = div_loss_(D, x, x_rec.detach(), cuda=config.cuda)
+            #
+            # D_loss_real += loss_real.item()
+            # D_loss_fake += loss_fake.item()
+            # D_loss_grad += loss_gp.item()
+            log_message =" " # f'D-[real:{loss_real.cpu().detach().numpy():.3f}, ' \
+                          #f'fake:{loss_fake.cpu().detach().numpy():.3f}, ' \
+                          #f'gp:{loss_gp.cpu().detach().numpy():.3f}]'
+            # D_loss = loss_real_weight * loss_real + loss_fake_weight * loss_fake + loss_gp_weight * loss_gp
+            # optimizer_D.zero_grad()
+            # D_loss.backward()
+            # optimizer_D.step()
 
 
             # ===============================
@@ -238,10 +227,10 @@ def training_loop(
                              f'{log_message}')
             if writer:
                 # writer.add_scalar('D/grad',grad_mean/l, global_step=global_step)
-                writer.add_scalar('D/loss_real', loss_real.item(), global_step=global_step)
-                writer.add_scalar('D/loss_fake', loss_fake.item(), global_step=global_step)
-                writer.add_scalar('D/loss_gp', loss_gp.item(), global_step=global_step)
-                writer.add_scalar('D/loss', D_loss.item(), global_step=global_step)
+                # writer.add_scalar('D/loss_real', loss_real.item(), global_step=global_step)
+                # writer.add_scalar('D/loss_fake', loss_fake.item(), global_step=global_step)
+                # writer.add_scalar('D/loss_gp', loss_gp.item(), global_step=global_step)
+                # writer.add_scalar('D/loss', D_loss.item(), global_step=global_step)
                 writer.add_scalar('E/loss_pix', loss_pix.item(), global_step=global_step)
                 writer.add_scalar('E/loss_feat', loss_feat.item(), global_step=global_step)
                 writer.add_scalar('E/loss_adv', loss_adv.item(), global_step=global_step)
@@ -277,26 +266,26 @@ def training_loop(
             global_step += 1
             if (global_step + 1) % E_lr_args.decay_step == 0:
                 lr_scheduler_E.step()
-            if (global_step + 1) % D_lr_args.decay_step == 0:
-                lr_scheduler_D.step()
+            # if (global_step + 1) % D_lr_args.decay_step == 0:
+            #     lr_scheduler_D.step()
 
-        D_loss_real /= train_dataloader.__len__()
-        D_loss_fake /= train_dataloader.__len__()
-        D_loss_grad /= train_dataloader.__len__()
+        # D_loss_real /= train_dataloader.__len__()
+        # D_loss_fake /= train_dataloader.__len__()
+        # D_loss_grad /= train_dataloader.__len__()
         E_loss_rec /= train_dataloader.__len__()
         E_loss_adv /= train_dataloader.__len__()
         E_loss_feat /= train_dataloader.__len__()
-        log_message_ep = f'D-[real:{D_loss_real:.5f}, fake:{D_loss_fake:.5f}, gp:{D_loss_grad:.3f}], ' \
-                         f'G-[pix:{E_loss_rec:.3f}, feat:{E_loss_feat:.3f}, adv:{E_loss_adv:.3f}]'
-        if logger:
-            logger.debug(f'Epoch: {epoch:03d}, '
-                         f'lr: {learning_rate:.2e}, '
-                         f'{log_message_ep}')
+        # log_message_ep = f'D-[real:{D_loss_real:.5f}, fake:{D_loss_fake:.5f}, gp:{D_loss_grad:.3f}], ' \
+        #                  f'G-[pix:{E_loss_rec:.3f}, feat:{E_loss_feat:.3f}, adv:{E_loss_adv:.3f}]'
+        # if logger:
+        #     logger.debug(f'Epoch: {epoch:03d}, '
+        #                  f'lr: {learning_rate:.2e}, '
+        #                  f'{log_message_ep}')
         if epoch%10==0:
             save_filename=f'epoch_{epoch:03d}_step_{step:04d}_test_{val_step:04d}.pth'
             save_filepath = os.path.join(config.save_models, save_filename)
-            checkpoint={"E":E.net.module.state_dict(),
-                        "D":D.module.state_dict()}
+            checkpoint={"E":E.net.module.state_dict(),}
+                        # "D":D.module.state_dict()}
             torch.save(checkpoint, save_filepath)
         #     torch.save(E.net.module.state_dict(), save_filepath)  #GPU
 

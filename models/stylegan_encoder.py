@@ -26,7 +26,9 @@ class StyleGANEncoder(BaseEncoder):
     if self.gpu_ids is not None:
         assert len(self.gpu_ids) > 1
         # self.net = nn.DataParallel(self.net, self.gpu_ids)
+        self.net=nn.SyncBatchNorm.convert_sync_batchnorm(self.net)
         self.net=nn.parallel.DistributedDataParallel(self.net,device_ids=[local_rank])
+
   def build(self):
     self.w_space_dim = getattr(self, 'w_space_dim', 512)
     self.encoder_channels_base = getattr(self, 'encoder_channels_base', 64)

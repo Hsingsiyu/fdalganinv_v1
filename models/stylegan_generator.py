@@ -44,7 +44,9 @@ class StyleGANGenerator(BaseGenerator):
     if self.gpu_ids is not None:
         assert len(self.gpu_ids) > 1
         # self.net.synthesis = nn.DataParallel(self.net.synthesis, self.gpu_ids)
-        self.net.synthesis=nn.parallel.DistributedDataParallel(self.net.synthesis,device_ids=[local_rank])
+        # self.net.synthesis=nn.parallel.DistributedDataParallel(self.net.synthesis,device_ids=[gpu_ids], output_device=gpu_ids)
+        self.net=nn.parallel.DistributedDataParallel(self.net,device_ids=[gpu_ids], output_device=gpu_ids)
+
   def build(self):
     self.z_space_dim = getattr(self, 'z_space_dim', 512)
     self.w_space_dim = getattr(self, 'w_space_dim', 512)

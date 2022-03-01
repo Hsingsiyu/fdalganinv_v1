@@ -18,9 +18,8 @@ import fDAL.utils
 import  copy
 import random
 from fDAL.utils import ConjugateDualFunction
-from collections import OrderedDict
+import itertools
 
-#TODO 随机数种子怎么搞啊
 def same_seeds(seed):
     random.seed(seed)
     torch.manual_seed(seed)
@@ -52,7 +51,7 @@ def training_loop(
         image_snapshot_ticks=500,
         max_epoch=100
 ):
-    same_seeds(2022)#
+    same_seeds(2022)
     epoch_s=0
     D_iters = config.D_iters
     E_iterations=0
@@ -67,11 +66,13 @@ def training_loop(
     G = StyleGANGenerator(config.model_name, logger, gpu_ids=config.gpu_ids)
     E = StyleGANEncoder(config.model_name, logger, gpu_ids=config.gpu_ids)
     D=h_layers(config.image_size,fmaps_max=128)
+    E.net.apply(weight_init)
+    D.apply(weight_init)
     D_hat = copy.deepcopy(D)
     D_hat.apply(lambda self_: self_.reset_parameters() if hasattr(self_, 'reset_parameters') else None)
     D.to(device)
-    D_hat.to(device)
-     # [bn,128,h/16.w/16]
+    D_hat.to(device)# [bn,128,h/16.w/16]
+
     # load parameter
     if config.gpu_ids is not None:
         assert len(config.gpu_ids) > 1
@@ -79,31 +80,29 @@ def training_loop(
         D_hat=nn.DataParallel(D_hat,config.gpu_ids)
 
     G.net.synthesis.eval()
-    D.eval()
-
     encode_dim = [G.num_layers, G.w_space_dim]
 
-    optimizer_E = torch.optim.Adam(E.net.parameters(), lr=E_lr_args.learning_rate, **opt_args)
+    optimizer_E = torch.optim.Adam(itertools.chain(E.net.parameters(),D.parameters()), lr=E_lr_args.learning_rate, **opt_args)
     if config.adam:
         optimizer_Dhat =torch.optim.Adam(D_hat.parameters(), lr=config.learn_rate, **opt_args)
     else:
         optimizer_Dhat = torch.optim.SGD(D_hat.parameters(), lr=config.learn_rate, momentum=0.9,
                                     nesterov=True, weight_decay=0.02)
 
-    E.net.apply(weight_init)
-    D_weight='/home/xsy/idinvert_pytorch-mycode/trainStyleD_output/styleganffhq256_discriminator_epoch_199.pth'
-    D_dict=D.state_dict()
-    pretrained_dict=torch.load(D_weight)
-    pretrained_dict ={k:v for k,v in pretrained_dict.items() if k in D_dict}
-    D_dict.update(pretrained_dict)
-    D.load_state_dict(D_dict)
+    # D_weight='/home/xsy/idinvert_pytorch-mycode/trainStyleD_output/styleganffhq256_discriminator_epoch_199.pth'
+    # D_dict=D.state_dict()
+    # pretrained_dict=torch.load(D_weight)
+    # pretrained_dict ={k:v for k,v in pretrained_dict.items() if k in D_dict}
+    # D_dict.update(pretrained_dict)
+    # D.load_state_dict(D_dict)
 
     if config.netE!='':
         E.net.load_state_dict(torch.load(config.netE))
 
     if config.netD_hat!='':
-        checkpoint=torch.load(config.netD_hat)
+        checkpoint=torch.load(config.netD_hat,map_location=torch.device("cpu"))
         D_hat.load_state_dict(checkpoint["h_hat"])
+        D.load_state_dict(checkpoint["h"])
         optimizer_Dhat.load_state_dict(checkpoint["optD_hat"])
         optimizer_E.load_state_dict((checkpoint["optE"]))
         epoch_s=checkpoint["epoch"]
@@ -114,6 +113,7 @@ def training_loop(
 
     l_func = nn.MSELoss(reduction='none')
     phistar_gf = lambda t: fDAL.utils.ConjugateDualFunction(config.divergence).fstarT(t)
+
 
     for epoch in range(epoch_s,max_epoch):
         data_iter = iter(train_dataloader)
@@ -136,6 +136,9 @@ def training_loop(
                 # (1) Update D' network
                 ############################
                 E.net.eval()
+                D.eval()
+                D_hat.train()
+
                 w_s = E.net(x_s).view(batch_size, *encode_dim)
                 w_t = E.net(x_t).view(batch_size, *encode_dim)
 
@@ -167,6 +170,8 @@ def training_loop(
                 # (2) Update E network
                 ############################
                 E.net.train()
+                D.train()
+                D_hat.eval()
                 w_s=E.net(x_s).view(batch_size, *encode_dim)
                 w_t=E.net(x_t).view(batch_size, *encode_dim)
 
@@ -248,6 +253,7 @@ def training_loop(
             save_filepath = os.path.join(config.save_models, save_filename)
             torch.save(E.net.state_dict(), save_filepath)
             checkpoint = {"h_hat": D_hat.state_dict(),
+                          "h":D.state_dict(),
                           "optD_hat": optimizer_Dhat.state_dict(),
                           "optE": optimizer_E.state_dict(),
                           "epoch": epoch + 1}

@@ -18,7 +18,7 @@ import fDAL.utils
 import  copy
 import json
 from fDAL.utils import ConjugateDualFunction
-
+import itertools
 def weight_init(m):
     if isinstance(m, nn.Linear):
         nn.init.xavier_normal_(m.weight)
@@ -44,27 +44,19 @@ def training_loop(
         epoch_s=0,
 ):
 
-    torch.cuda.set_device(config.local_rank)
-    torch.distributed.init_process_group(
-        'nccl',
-        init_method='env://'
-    )
     #TODO  为什么写的不一样啊！！！
     if config.gpu_ids is not None:
-        if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-            rank = int(os.environ["RANK"])
-            world_size = int(os.environ['WORLD_SIZE'])
-            gpu = int(os.environ['LOCAL_RANK'])
-            print(rank, world_size, gpu)
-        elif 'SLURM_PROCID' in os.environ:
-            rank = int(os.environ['SLURM_PROCID'])
-            gpu = rank % torch.cuda.device_count()
-        torch.cuda.set_device(gpu)
-        torch.distributed.init_process_group(backend='nccl',
-                                             world_size=world_size,
-                                             rank=rank)  # choose nccl as backend using gpus
+        # if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        #     rank = int(os.environ["RANK"])
+        #     world_size = int(os.environ['WORLD_SIZE'])
+        #     gpu = int(os.environ['LOCAL_RANK'])
+        #     # print(rank, world_size, gpu)
+        # elif 'SLURM_PROCID' in os.environ:
+        #     rank = int(os.environ['SLURM_PROCID'])
+        #     # gpu = rank % torch.cuda.device_count()
+        torch.distributed.init_process_group(backend='nccl',)  # choose nccl as backend using gpus
         torch.distributed.barrier()  # synchronizes all processes
-        device = torch.device('cuda')
+        torch.cuda.set_device(config.local_rank)
 
 
     # construct dataloader
@@ -72,12 +64,12 @@ def training_loop(
     val_dataset = datasets.celebahq.ImageDataset(dataset_args, train=False)
     if config.gpu_ids is not None:
         train_sampler=torch.utils.data.distributed.DistributedSampler(train_dataset)
-        train_batch_sampler=torch.utils.data.distributed.BatchSampler(train_sampler,config.train_batch_size,drop_last=True) ## YOUR_BATCHSIZE is the batch size per gpu  https://zhuanlan.zhihu.com/p/449615298
-        train_dataloader = torch.utils.data.DataLoader(train_dataset,  batch_sampler=train_batch_sampler)
+        # train_batch_sampler=torch.utils.data.distributed.BatchSampler(train_sampler,config.train_batch_size,drop_last=True) ## YOUR_BATCHSIZE is the batch size per gpu  https://zhuanlan.zhihu.com/p/449615298
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=int(config.train_batch_size/len(config.gpu_ids)),sampler=train_sampler,pin_memory=True)
 
         val_sampler=torch.utils.data.distributed.DistributedSampler(val_dataset)
-        val_batch_sampler=torch.utils.data.distributed.BatchSampler(val_sampler,config.train_batch_size,drop_last=True) ## YOUR_BATCHSIZE is the batch size per gpu  https://zhuanlan.zhihu.com/p/449615298
-        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_sampler=val_batch_sampler)
+        # val_batch_sampler=torch.utils.data.distributed.BatchSampler(val_sampler,config.train_batch_size,drop_last=True) ## YOUR_BATCHSIZE is the batch size per gpu  https://zhuanlan.zhihu.com/p/449615298
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=int(config.test_batch_size/len(config.gpu_ids)),sampler=val_sampler,pin_memory=True)
     else:
         train_dataloader = DataLoader(train_dataset, batch_size=config.train_batch_size, shuffle=True)
         val_dataloader = DataLoader(val_dataset, batch_size=config.test_batch_size, shuffle=False)
@@ -85,41 +77,40 @@ def training_loop(
     # construct model
     G = StyleGANGenerator(config.model_name, logger, gpu_ids=config.local_rank)
     E = StyleGANEncoder(config.model_name, logger, gpu_ids=config.local_rank)
-    D=h_layers(config.image_size,fmaps_max=128)
-    D_hat = copy.deepcopy(D)
-    D_hat.apply(lambda self_: self_.reset_parameters() if hasattr(self_, 'reset_parameters') else None)
-     # [bn,128,h/16.w/16]
-    D.to(device)
-    D_hat.to(device)
 
+    D=h_layers(config.image_size,fmaps_max=128)
+    D_hat = copy.deepcopy(D)  # [bn,128,h/16.w/16]
+
+    D.cuda()
+    D_hat.cuda()
+    #DDP前先送入GPU
     if config.gpu_ids is not None:
         assert len(config.gpu_ids) > 1
-        D = nn.parallel.DistributedDataParallel(D, device_ids=[config.local_rank])
-        D_hat = nn.parallel.DistributedDataParallel(D_hat, device_ids=[config.local_rank])
+        D = nn.parallel.DistributedDataParallel(D, device_ids=[config.local_rank],broadcast_buffers=False)
+        D_hat = nn.parallel.DistributedDataParallel(D_hat, device_ids=[config.local_rank],broadcast_buffers=False)
+
 
     # load parameter
     E.net.apply(weight_init)
-    D_weight='/home/xsy/idinvert_pytorch-mycode/trainStyleD_output/styleganffhq256_discriminator_epoch_199.pth'
-    D_dict=D.state_dict()
-    pretrained_dict=torch.load(D_weight)
-    pretrained_dict ={k:v for k,v in pretrained_dict.items() if k in D_dict}
-    D_dict.update(pretrained_dict)
-    D.load_state_dict(D_dict)
+    D.apply(weight_init)
+    D_hat.apply(lambda self_: self_.reset_parameters() if hasattr(self_, 'reset_parameters') else None)
+
     if config.netE!='':
-        E.net.load_state_dict(torch.load(config.netE))
+        E.net.load_state_dict(torch.load(config.netE,map_location=torch.device("cpu")))
 
     if config.netD_hat!='':
-        checkpoint=torch.load(config.netD_hat)
+        checkpoint=torch.load(config.netD_hat,map_location=torch.device('cpu'))
         D_hat.load_state_dict(checkpoint["h_hat"])
+        D.load_state_dict(checkpoint["h"])
+        optimizer_Dhat.load_state_dict(checkpoint["optD_hat"])
+        optimizer_E.load_state_dict((checkpoint["optE"]))
         epoch_s=checkpoint["epoch"]
 
     G.net.synthesis.eval()
-    D.eval()
-    # D=D.cuda()
-    # D_hat=D_hat.cuda()
     encode_dim = [G.num_layers, G.w_space_dim]
+
     # setup optimizer
-    optimizer_E = torch.optim.Adam(E.net.parameters(), lr=E_lr_args.learning_rate, **opt_args)
+    optimizer_E = torch.optim.Adam(itertools.chain(E.net.parameters(),D.parameters()), lr=E_lr_args.learning_rate, **opt_args)
     if config.adam:
         optimizer_Dhat =torch.optim.Adam(D_hat.parameters(), lr=config.learn_rate, **opt_args)
     else:
@@ -128,16 +119,13 @@ def training_loop(
     if config.netD_hat!='':
         optimizer_Dhat.load_state_dict(checkpoint["optD_hat"])
         optimizer_E.load_state_dict((checkpoint["optE"]))
-        epoch_s=checkpoint["epoch"]
 
     lr_scheduler_E = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer_E, gamma=E_lr_args.decay_rate)
 
     lr_scheduler_Dhat=fDAL.utils.scheduler(optimizer_Dhat,optimizer_Dhat.state_dict()["param_groups"][0]["lr"],decay_step_=D_lr_args.decay_step,gamma_=0.5)
 
-
-    # TODO:
     # write out config
-    generator_config = {"imageSize": config.imageSize, "dataset": config.dataset_name, "train_bs": config.train_batch_size,"val_bs": config.val_batch_size,"div":config.divergence,"nepoch":config.nepoch,
+    generator_config = {"imageSize": config.image_size, "dataset": config.dataset_name, "train_bs": config.train_batch_size,"val_bs": config.test_batch_size,"div":config.divergence,"nepoch":config.nepoch,
                         "adam":config.adam,"lr_E":optimizer_E.state_dict()["param_groups"][0]["lr"],
                         "Edecay_rate":E_lr_args.decay_rate,"lr_Dhat":optimizer_Dhat.state_dict()["param_groups"][0]["lr"],
                         "Ddecay_rate":D_lr_args.decay_step}
@@ -147,6 +135,7 @@ def training_loop(
     D_iters = config.D_iters
     E_iterations=0
     D_iterations=0
+
     l_func = nn.MSELoss(reduction='none')
     phistar_gf = lambda t: fDAL.utils.ConjugateDualFunction(config.divergence).fstarT(t)
 
@@ -172,6 +161,9 @@ def training_loop(
                 # (1) Update D' network
                 ############################
                 E.net.eval()
+                D.eval()
+                D_hat.train()
+
                 w_s = E.net(x_s).view(batch_size, *encode_dim)
                 w_t = E.net(x_t).view(batch_size, *encode_dim)
 
@@ -187,11 +179,13 @@ def training_loop(
                 l_s = l_func(features_s_adv, features_s)
                 l_t = l_func(features_t_adv, features_t)
                 dst = torch.mean(l_s) - torch.mean(phistar_gf(l_t))
-                optimizer_Dhat.zero_grad()
                 loss_Dhat = -1*dst
+
+                optimizer_Dhat.zero_grad()
                 loss_Dhat.backward()
                 torch.nn.utils.clip_grad_norm_(D_hat.parameters(), 10)
                 optimizer_Dhat.step()
+
                 D_iterations += 1
                 if writer:
                     writer.add_scalar('trainD/dst', loss_Dhat.item(), global_step=D_iterations)
@@ -199,9 +193,12 @@ def training_loop(
                     writer.add_scalar('trainD/trg', l_t.mean().item(), global_step=D_iterations)
             else:
                 ############################
-                # (2) Update E network
+                # (2) Update E,D network
                 ############################
                 E.net.train()
+                D.train()
+                D_hat.eval()
+
                 w_s=E.net(x_s).view(batch_size, *encode_dim)
                 w_t=E.net(x_t).view(batch_size, *encode_dim)
 
@@ -277,11 +274,10 @@ def training_loop(
             save_filename = f'styleganinv_encoder_epoch_{epoch:03d}.pth'
             save_filepath = os.path.join(config.save_models, save_filename)
             torch.save(E.net.state_dict(), save_filepath)
-            checkpoint = {"h_hat": D_hat.module.state_dict(),
+            checkpoint = {"h_hat": D_hat.state_dict(),
+                          "h":D.state_dict(),
                           "optD_hat": optimizer_Dhat.state_dict(),
                           "optE": optimizer_E.state_dict(),
-                          # "lr_D_hat":lr_scheduler_Dhat.state_dict(),
-                          # "lr_E":lr_scheduler_E.state_dict(),
                           "epoch": epoch + 1}
             path_checkpoint = "{0}/checkpoint_{1}_epoch.pkl".format(config.save_models, epoch + 1)
             torch.save(obj=checkpoint, f=path_checkpoint)

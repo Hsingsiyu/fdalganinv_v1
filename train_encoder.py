@@ -11,8 +11,8 @@ from training.misc import EasyDict
 from training.training_loop_encoder import training_loop
 from utils.logger import setup_logger
 from tensorboardX import SummaryWriter
-
-
+import torch
+a=torch.nn.NLLLoss2d()
 def main():
     parser = argparse.ArgumentParser(description='Training the in-domain encoder through pytorch')
     parser.add_argument('--data_root', type=str, default='/home/customer/hdd/students/xsy-fdal/FFHQ',

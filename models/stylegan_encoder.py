@@ -11,6 +11,7 @@ import torch.nn as nn
 
 from .base_encoder import BaseEncoder
 from .stylegan_encoder_network import StyleGANEncoderNet
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 __all__ = ['StyleGANEncoder']
 
@@ -22,12 +23,15 @@ class StyleGANEncoder(BaseEncoder):
     self.gan_type = 'stylegan'
     super().__init__(model_name, logger, gpu_ids)
     # Data Parallel
-    self.net.to(self.run_device)
-    if self.gpu_ids is not None:
+    # self.net.to(self.run_device)
+    self.net.cuda()
+    if (local_rank is not None) :
+        self.net=DDP(self.net,device_ids=[local_rank],broadcast_buffers=False, find_unused_parameters=True)
+    else:
         assert len(self.gpu_ids) > 1
-        # self.net = nn.DataParallel(self.net, self.gpu_ids)
-        self.net=nn.SyncBatchNorm.convert_sync_batchnorm(self.net)
-        self.net=nn.parallel.DistributedDataParallel(self.net,device_ids=[local_rank])
+        self.net = nn.DataParallel(self.net, self.gpu_ids)
+        # self.net=nn.SyncBatchNorm.convert_sync_batchnorm(self.net)
+        # self.net=nn.parallel.DistributedDataParallel(self.net,device_ids=[gpu_ids], output_device=gpu_ids,broadcast_buffers=False)
 
   def build(self):
     self.w_space_dim = getattr(self, 'w_space_dim', 512)

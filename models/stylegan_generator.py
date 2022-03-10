@@ -13,6 +13,7 @@ import torch.nn as nn
 from . import model_settings
 from .base_generator import BaseGenerator
 from .stylegan_generator_network import StyleGANGeneratorNet
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 __all__ = ['StyleGANGenerator']
 
@@ -40,12 +41,13 @@ class StyleGANGenerator(BaseGenerator):
     self.lod = self.net.synthesis.lod.to(self.cpu_device).tolist()
     self.logger.info(f'Current `lod` is {self.lod}.')
     # Data Parallel
-    self.net.synthesis.to(self.run_device)
-    if self.gpu_ids is not None:
+    self.net.synthesis.cuda()
+    if (local_rank is not None) :
+        self.net.synthesis=DDP(self.net.synthesis,device_ids=[local_rank],broadcast_buffers=False, find_unused_parameters=True)
+    else:
         assert len(self.gpu_ids) > 1
-        # self.net.synthesis = nn.DataParallel(self.net.synthesis, self.gpu_ids)
-        # self.net.synthesis=nn.parallel.DistributedDataParallel(self.net.synthesis,device_ids=[gpu_ids], output_device=gpu_ids)
-        self.net=nn.parallel.DistributedDataParallel(self.net,device_ids=[gpu_ids], output_device=gpu_ids)
+        self.net.synthesis = nn.DataParallel(self.net.synthesis, self.gpu_ids)
+
 
   def build(self):
     self.z_space_dim = getattr(self, 'z_space_dim', 512)

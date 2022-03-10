@@ -6,7 +6,8 @@ import numpy as np
 from torch.utils import data
 from torchvision import transforms as trans
 from PIL import Image
-
+import torch
+from torch.autograd import Variable
 class ImageDataset(data.Dataset):
 
     def __init__(self, dataset_args,train=True,paired=True):
@@ -227,7 +228,29 @@ class FFHQDataset(data.Dataset):
             return len(self.train_list)
         else:
             return len(self.val_list)
+class ReplayBuffer():
+    def __init__(self, max_size=50):
+        assert (max_size > 0), 'Empty buffer or trying to create a black hole. Be careful.'
+        self.max_size = max_size
+        self.data = []
 
+    def push_and_pop(self, data):
+        to_return = []
+        for element in data:
+            # element = torch.unsqueeze(element, 0)#[1,3,W,H]
+            print(element.shape)
+            exit()
+            if len(self.data) < self.max_size:
+                self.data.append(element)
+                to_return.append(element)
+            else:
+                if random.uniform(0,1) > 0.5:
+                    i = random.randint(0, self.max_size-1)
+                    to_return.append(self.data[i].clone())
+                    self.data[i] = element
+                else:
+                    to_return.append(element)
+        return Variable(torch.cat(to_return))
 
 if __name__ == '__main__':
     class Config:

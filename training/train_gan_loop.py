@@ -62,7 +62,6 @@ def training_loop(
 
     if config.gpu_ids is not None:
         torch.distributed.init_process_group(backend='nccl',)  # choose nccl as backend using gpus
-        # torch.distributed.barrier()  # synchronizes all processes
         torch.cuda.set_device(config.local_rank)
 
 

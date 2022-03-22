@@ -114,7 +114,7 @@ def training_loop(
         train_dataset = datasets.celebahq.Lsun_tower(dataset_args, train=True)
         val_dataset = datasets.celebahq.Lsun_tower(dataset_args, train=False)
     # num_workers????
-    train_dataloader = DataLoader(train_dataset, batch_size=config.train_batch_size, shuffle=True,drop_last=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=config.train_batch_size, shuffle=True,drop_last=True,num_workers=8)
     val_dataloader = DataLoader(val_dataset, batch_size=config.test_batch_size, shuffle=True)# todo
     # construct model
     G = StyleGANGenerator(config.model_name, logger, gpu_ids=config.gpu_ids)
@@ -124,27 +124,27 @@ def training_loop(
     D=StyleGANDiscriminator(config.image_size,fmaps_max=config.d_fmaps_max)
     # init parameter
     D.cuda()
-    D_weigth='/home/xsy/idinvert_pytorch-mycode/trainStyleD_output/styleganffhq256_discriminator_epoch_199.pth'
-    D.load_state_dict(torch.load(D_weigth))
+    # D_weigth='/home/xsy/idinvert_pytorch-mycode/trainStyleD_output/styleganffhq256_discriminator_epoch_199.pth'
+    # D.load_state_dict(torch.load(D_weigth))
     if config.gpu_ids is not None:
         assert len(config.gpu_ids) > 1
         D = nn.DataParallel(D, config.gpu_ids)
 
     E.net.apply(weight_init)
-    # D.apply(weight_init)
+    D.apply(weight_init)
 
     G.net.synthesis.eval()
     E.net.train()
     F.net.eval()
-    D.eval()
+    D.train()
 
     encode_dim = [G.num_layers, G.w_space_dim]
 
     # optimizer
     optimizer_E = torch.optim.Adam(E.net.parameters(), lr=E_learning_rate, **opt_args)
-    # optimizer_D = torch.optim.Adam(D.parameters(), lr=D_learning_rate, **opt_args)
+    optimizer_D = torch.optim.Adam(D.parameters(), lr=D_learning_rate, **opt_args)
     lr_scheduler_E = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer_E, gamma=E_lr_args.decay_rate)
-    # lr_scheduler_D = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer_D, gamma=D_lr_args.decay_rate)
+    lr_scheduler_D = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer_D, gamma=D_lr_args.decay_rate)
 
     global_step = 0
     for epoch in range(max_epoch):
@@ -165,25 +165,23 @@ def training_loop(
             # # ===============================
             # #         optimizing D
             # # ===============================
-            #
-            #
-            # x_real = D(x)
-            # x_fake = D(x_rec.detach())
-            # loss_real = GAN_loss(x_real, real=True)
-            # loss_fake = GAN_loss(x_fake, real=False)
-            # # gradient div
-            # loss_gp = div_loss_(D, x, x_rec.detach(), cuda=config.cuda)
-            #
-            # D_loss_real += loss_real.item()
-            # D_loss_fake += loss_fake.item()
-            # D_loss_grad += loss_gp.item()
-            log_message =" " # f'D-[real:{loss_real.cpu().detach().numpy():.3f}, ' \
-                          #f'fake:{loss_fake.cpu().detach().numpy():.3f}, ' \
-                          #f'gp:{loss_gp.cpu().detach().numpy():.3f}]'
-            # D_loss = loss_real_weight * loss_real + loss_fake_weight * loss_fake + loss_gp_weight * loss_gp
-            # optimizer_D.zero_grad()
-            # D_loss.backward()
-            # optimizer_D.step()
+            x_real = D(x)
+            x_fake = D(x_rec.detach())
+            loss_real = GAN_loss(x_real, real=True)
+            loss_fake = GAN_loss(x_fake, real=False)
+            # gradient div
+            loss_gp = div_loss_(D, x, x_rec.detach(), cuda=config.cuda)
+
+            D_loss_real += loss_real.item()
+            D_loss_fake += loss_fake.item()
+            D_loss_grad += loss_gp.item()
+            log_message = f'D-[real:{loss_real.cpu().detach().numpy():.3f}, ' \
+                          f'fake:{loss_fake.cpu().detach().numpy():.3f}, ' \
+                          f'gp:{loss_gp.cpu().detach().numpy():.3f}]'
+            D_loss = loss_real_weight * loss_real + loss_fake_weight * loss_fake + loss_gp_weight * loss_gp
+            optimizer_D.zero_grad()
+            D_loss.backward()
+            optimizer_D.step()
 
 
             # ===============================
@@ -227,10 +225,10 @@ def training_loop(
                              f'{log_message}')
             if writer:
                 # writer.add_scalar('D/grad',grad_mean/l, global_step=global_step)
-                # writer.add_scalar('D/loss_real', loss_real.item(), global_step=global_step)
-                # writer.add_scalar('D/loss_fake', loss_fake.item(), global_step=global_step)
-                # writer.add_scalar('D/loss_gp', loss_gp.item(), global_step=global_step)
-                # writer.add_scalar('D/loss', D_loss.item(), global_step=global_step)
+                writer.add_scalar('D/loss_real', loss_real.item(), global_step=global_step)
+                writer.add_scalar('D/loss_fake', loss_fake.item(), global_step=global_step)
+                writer.add_scalar('D/loss_gp', loss_gp.item(), global_step=global_step)
+                writer.add_scalar('D/loss', D_loss.item(), global_step=global_step)
                 writer.add_scalar('E/loss_pix', loss_pix.item(), global_step=global_step)
                 writer.add_scalar('E/loss_feat', loss_feat.item(), global_step=global_step)
                 writer.add_scalar('E/loss_adv', loss_adv.item(), global_step=global_step)
@@ -264,24 +262,24 @@ def training_loop(
                     tvutils.save_image(tensor=x_all, fp=save_filepath, nrow=config.test_batch_size, normalize=True, scale_each=True)
 
             global_step += 1
-            if (global_step + 1) % E_lr_args.decay_step == 0:
+            if (global_step) % E_lr_args.decay_step == 0:
                 lr_scheduler_E.step()
-            # if (global_step + 1) % D_lr_args.decay_step == 0:
-            #     lr_scheduler_D.step()
+            if (global_step) % D_lr_args.decay_step == 0:
+                lr_scheduler_D.step()
 
-        # D_loss_real /= train_dataloader.__len__()
-        # D_loss_fake /= train_dataloader.__len__()
-        # D_loss_grad /= train_dataloader.__len__()
+        D_loss_real /= train_dataloader.__len__()
+        D_loss_fake /= train_dataloader.__len__()
+        D_loss_grad /= train_dataloader.__len__()
         E_loss_rec /= train_dataloader.__len__()
         E_loss_adv /= train_dataloader.__len__()
         E_loss_feat /= train_dataloader.__len__()
-        # log_message_ep = f'D-[real:{D_loss_real:.5f}, fake:{D_loss_fake:.5f}, gp:{D_loss_grad:.3f}], ' \
-        #                  f'G-[pix:{E_loss_rec:.3f}, feat:{E_loss_feat:.3f}, adv:{E_loss_adv:.3f}]'
-        # if logger:
-        #     logger.debug(f'Epoch: {epoch:03d}, '
-        #                  f'lr: {learning_rate:.2e}, '
-        #                  f'{log_message_ep}')
-        if epoch%10==0:
+        log_message_ep = f'D-[real:{D_loss_real:.5f}, fake:{D_loss_fake:.5f}, gp:{D_loss_grad:.3f}], ' \
+                         f'G-[pix:{E_loss_rec:.3f}, feat:{E_loss_feat:.3f}, adv:{E_loss_adv:.3f}]'
+        if logger:
+            logger.debug(f'Epoch: {epoch:03d}, '
+                         f'lr: {learning_rate:.2e}, '
+                         f'{log_message_ep}')
+        if (epoch+1)%5==0:
             save_filename=f'epoch_{epoch:03d}_step_{step:04d}_test_{val_step:04d}.pth'
             save_filepath = os.path.join(config.save_models, save_filename)
             checkpoint={"E":E.net.module.state_dict(),}

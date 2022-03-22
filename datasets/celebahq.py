@@ -8,6 +8,8 @@ from torchvision import transforms as trans
 from PIL import Image
 import torch
 from torch.autograd import Variable
+
+
 class ImageDataset(data.Dataset):
 
     def __init__(self, dataset_args,train=True,paired=True):
@@ -24,10 +26,12 @@ class ImageDataset(data.Dataset):
         self.paired=paired
         self.transform = trans.ToTensor()
         self.transform_t=trans.Compose([
-            trans.ToTensor(),
-            trans.RandomApply([trans.RandomAffine(degrees=(-30, 30))], p=0.5),
+            trans.RandomApply([trans.RandomAffine(degrees=(-30, 30))], p=1),
+            # trans.RandomGrayscale(p=0.2),
+            # trans.RandomChoice(),
             # trans.RandomApply([trans.RandomResizedCrop(size=(256, 256), scale=(0.8, 1.0))], p=0.5),
             # trans.GaussianBlur(kernel_size=(5,9),sigma=(0.1,5))
+            trans.ToTensor(),
         ])
         # self.files_s = sorted(glob.glob(os.path.join(self.root, '/Source') + '/*.*'))   # get the whole files in directory
         # self.files_t = sorted(glob.glob(os.path.join(self.root, '/Target') + '/*.*'))
@@ -237,9 +241,8 @@ class ReplayBuffer():
     def push_and_pop(self, data):
         to_return = []
         for element in data:
-            # element = torch.unsqueeze(element, 0)#[1,3,W,H]
-            print(element.shape)
-            exit()
+            # element = torch.unsqueeze(element, 0)
+
             if len(self.data) < self.max_size:
                 self.data.append(element)
                 to_return.append(element)

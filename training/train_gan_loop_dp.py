@@ -1,8 +1,8 @@
 # from datasets.celebahq import FFHQ
 import datasets.celebahq
 from models.stylegan_generator import StyleGANGenerator
-
 from models.stylegan_encoder import StyleGANEncoder
+from models.perceptual_model import PerceptualModel
 from models.stylegan_discriminator_network2 import h_layers
 from training.misc import EasyDict
 
@@ -47,6 +47,7 @@ def training_loop(
         Dhat_lr_args=EasyDict(),
         D_lr_args=EasyDict(),
         opt_args=EasyDict(),
+        loss_args= EasyDict(),
         logger=None,
         writer=None,
         image_snapshot_ticks=500,
@@ -58,6 +59,10 @@ def training_loop(
     D_iterations=0
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+    loss_pix_weight=loss_args.loss_pix_weight
+    loss_w_weight=loss_args.loss_w_weight
+    loss_dst_weight=loss_args.loss_dst_weight
+    loss_feat_weight=loss_args.loss_feat_weight
     # construct dataloader
     train_dataset=datasets.celebahq.ImageDataset(dataset_args,train=True)
     val_dataset = datasets.celebahq.ImageDataset(dataset_args, train=False)
@@ -66,6 +71,8 @@ def training_loop(
     # construct model
     G = StyleGANGenerator(config.model_name, logger, gpu_ids=config.gpu_ids)
     E = StyleGANEncoder(config.model_name, logger, gpu_ids=config.gpu_ids)
+    F = PerceptualModel(min_val=-1, max_val=1, gpu_ids=config.gpu_ids)
+
     D=h_layers(config.image_size,fmaps_max=128)
 
     E.net.apply(weight_init)
@@ -77,13 +84,6 @@ def training_loop(
     D.to(device)
     D_hat.to(device)# [bn,128,h/16.w/16]
 
-
-    # D_weight='/home/xsy/idinvert_pytorch-mycode/trainStyleD_output/styleganffhq256_discriminator_epoch_199.pth'
-    # D_dict=D.state_dict()
-    # pretrained_dict=torch.load(D_weight)
-    # pretrained_dict ={k:v for k,v in pretrained_dict.items() if k in D_dict}
-    # D_dict.update(pretrained_dict)
-    # D.load_state_dict(D_dict)
 
     # load parameter
     if config.gpu_ids is not None:
@@ -128,6 +128,7 @@ def training_loop(
                         "train_bs": config.train_batch_size,"val_bs": config.test_batch_size,"div":config.divergence,"nepoch":config.nepoch,
                         "adam":config.adam,"lr_E":optimizer_E.state_dict()["param_groups"][0]["lr"],
                         "lr_D": optimizer_D.state_dict()["param_groups"][0]["lr"],"lr_Dhat":optimizer_Dhat.state_dict()["param_groups"][0]["lr"],
+                        "pix_weight":loss_args.loss_pix_weight,"w_weight":loss_args.loss_w_weight,"dst_weight":loss_args.loss_dst_weight,
                         "Edecay_rate":E_lr_args.decay_step,"Ddecay_rate":D_lr_args.decay_step,  "Dhat_decay_rate":Dhat_lr_args.decay_step,
                         }
     with open(os.path.join(config.save_logs, "config.json"), 'w') as gcfg:
@@ -146,8 +147,8 @@ def training_loop(
             image_snapshot_step=image_snapshot_ticks
         i=0
         while i<len(train_dataloader):
-            if (E_iterations+1) % 500 == 0:
-                D_iters = 200
+            if (E_iterations+1) % 300 == 0:
+                D_iters = 100
             else:
                 D_iters = config.D_iters
             j=0
@@ -184,6 +185,8 @@ def training_loop(
                 # torch.nn.utils.clip_grad_norm_(D_hat.parameters(), 10)
                 optimizer_Dhat.step()
                 D_iterations += 1
+                if (D_iterations) % D_lr_args.decay_step == 0:
+                    lr_scheduler_Dhat.step()
                 if writer:
                     writer.add_scalar('max/dst', dst.item(), global_step=D_iterations)
                     writer.add_scalar('max/src', l_s.mean().item(), global_step=D_iterations)
@@ -211,6 +214,12 @@ def training_loop(
                 # task loss in pixel and code
             task_loss_pix = mytask_loss_(x_s, xrec_s)  # L(x_s,G(E(x_s)))
             task_loss_w = mytask_loss_(features_s, source_label)  # L(h(x),hGE(x))
+            loss_feat = 0.
+            if loss_feat_weight:
+                x_feat = F.net(x_S)
+                x_rec_feat = F.net(xrec_s)
+                loss_feat = torch.mean((x_feat - x_rec_feat) ** 2)
+                # log_message += f', feat:{loss_feat.cpu().detach().numpy():.5f}'
 
             features_s_adv = D_hat(xrec_s)  # h'(GE(x_s))
             features_t_adv = D_hat(xrec_t)  # h'(GE(x_t))
@@ -220,7 +229,7 @@ def training_loop(
             dst =  torch.mean(l_s) - torch.mean(phistar_gf(l_t))
             optimizer_E.zero_grad()
             optimizer_D.zero_grad()
-            loss_E=5*task_loss_pix+task_loss_w+dst
+            loss_E=loss_pix_weight*task_loss_pix+loss_w_weight*task_loss_w+loss_dst_weight*dst #+loss_feat_weight*loss_feat
             loss_E.backward()
             optimizer_D.step()
             optimizer_E.step()
@@ -237,8 +246,9 @@ def training_loop(
             if logger:
                 logger.debug(f'Epoch:{epoch:03d}, '
                                  f'E_Step:{E_iterations:04d}, '
-                                 f'Dlr:{optimizer_Dhat.state_dict()["param_groups"][0]["lr"]:.2e}, '
+                                 f'Dlr:{optimizer_D.state_dict()["param_groups"][0]["lr"]:.2e}, '
                                  f'Elr:{optimizer_E.state_dict()["param_groups"][0]["lr"]:.2e}, '
+                                 f'Dhatlr:{optimizer_Dhat.state_dict()["param_groups"][0]["lr"]:.2e}, '
                                  f'{log_message}')
             if E_iterations % image_snapshot_step == 0:
                     # E.net.eval()
@@ -272,11 +282,10 @@ def training_loop(
                         tvutils.save_image(tensor=x_all, fp=save_filepath, nrow=batch_size, normalize=True,
                                            scale_each=True)
 
-            if (E_iterations+1) % E_lr_args.decay_step == 0:
+            if (E_iterations) % E_lr_args.decay_step == 0:
                     lr_scheduler_E.step()
                     lr_scheduler_D.step()
-            if(D_iterations+1) % D_lr_args.decay_step==0:
-                    lr_scheduler_Dhat.step()
+
 
 
         if (epoch+1) % 100 == 0:

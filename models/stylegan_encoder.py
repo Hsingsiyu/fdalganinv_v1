@@ -27,7 +27,7 @@ class StyleGANEncoder(BaseEncoder):
     self.net.cuda()
     if (local_rank is not None) :
         self.net=DDP(self.net,device_ids=[local_rank],broadcast_buffers=False, find_unused_parameters=True)
-    else:
+    elif self.gpu_ids is not None:
         assert len(self.gpu_ids) > 1
         self.net = nn.DataParallel(self.net, self.gpu_ids)
         # self.net=nn.SyncBatchNorm.convert_sync_batchnorm(self.net)

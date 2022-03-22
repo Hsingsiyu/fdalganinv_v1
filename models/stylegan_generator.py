@@ -44,7 +44,7 @@ class StyleGANGenerator(BaseGenerator):
     self.net.synthesis.cuda()
     if (local_rank is not None) :
         self.net.synthesis=DDP(self.net.synthesis,device_ids=[local_rank],broadcast_buffers=False, find_unused_parameters=True)
-    else:
+    elif self.gpu_ids is not None:
         assert len(self.gpu_ids) > 1
         self.net.synthesis = nn.DataParallel(self.net.synthesis, self.gpu_ids)
 

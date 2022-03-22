@@ -1,6 +1,9 @@
 # python 3.7
 """Contains the VGG16 model for perceptual feature extraction."""
 
+# python 3.7
+"""Contains the VGG16 model for perceptual feature extraction."""
+
 import os
 from collections import OrderedDict
 import numpy as np
@@ -9,8 +12,10 @@ import torch
 import torch.nn as nn
 
 from . import model_settings
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 __all__ = ['VGG16', 'PerceptualModel']
+
 _WEIGHT_PATH = os.path.join(model_settings.MODEL_DIR, 'vgg16.pth')
 
 _MEAN_STATS = (103.939, 116.779, 123.68)
@@ -18,20 +23,17 @@ _MEAN_STATS = (103.939, 116.779, 123.68)
 
 class VGG16(nn.Sequential):
   """Defines the VGG16 structure as the perceptual network.
-
   This models takes `RGB` images with pixel range [-1, 1] and data format `NCHW`
   as raw inputs. This following operations will be performed to preprocess the
   inputs (as defined in `keras.applications.imagenet_utils.preprocess_input`):
   (1) Shift pixel range to [0, 255].
   (3) Change channel order to `BGR`.
   (4) Subtract the statistical mean.
-
   NOTE: The three fully connected layers on top of the model are dropped.
   """
 
   def __init__(self, output_layer_idx=23, min_val=-1.0, max_val=1.0):
     """Defines the network structure.
-
     Args:
       output_layer_idx: Index of layer whose output will be used as perceptual
         feature. (default: 23, which is the `block4_conv3` layer activated by
@@ -91,7 +93,7 @@ class VGG16(nn.Sequential):
 class PerceptualModel(object):
   """Defines the perceptual model class."""
 
-  def __init__(self, output_layer_idx=23, min_val=-1.0, max_val=1.0, gpu_ids=None):
+  def __init__(self, output_layer_idx=23, min_val=-1.0, max_val=1.0,gpu_ids=None,local_rank=None):
     """Initializes."""
     self.use_cuda = model_settings.USE_CUDA and torch.cuda.is_available()
     self.batch_size = model_settings.MAX_IMAGES_ON_DEVICE
@@ -109,22 +111,21 @@ class PerceptualModel(object):
                      max_val=self.max_val)
 
     self.weight_path = _WEIGHT_PATH
-    # print(self.weight_path)
 
     if not os.path.isfile(self.weight_path):
       raise IOError('No pre-trained weights found for perceptual model!')
-    self.net.load_state_dict(torch.load(self.weight_path),False)
-    print('Successfully loading Perceptual network.')
-    self.net.eval().to(self.run_device)
-    if self.gpu_ids is not None:
+    self.net.load_state_dict(torch.load(self.weight_path,map_location=torch.device("cpu")))
+    # self.net.eval().to(self.run_device)
+    self.net.eval().cuda()
+    if (local_rank is not None) :
+        self.net=DDP(self.net,device_ids=[local_rank],broadcast_buffers=False, find_unused_parameters=True)
+    else:
         assert len(self.gpu_ids) > 1
         self.net = nn.DataParallel(self.net, gpu_ids)
 
   def get_batch_inputs(self, inputs, batch_size=None):
     """Gets inputs within mini-batch.
-
     This function yields at most `self.batch_size` inputs at a time.
-
     Args:
       inputs: Input data to form mini-batch.
       batch_size: Batch size. If not specified, `self.batch_size` will be used.

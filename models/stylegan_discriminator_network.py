@@ -332,7 +332,17 @@ class FirstConvBlock(nn.Module):
         x = self.conv(x) * self.scale
         x = x + self.bias.view(1, -1, 1, 1)
         return x
-
+def weight_init(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_normal_(m.weight)
+       # nn.init.constant_(m.bias, 0)
+    # 也可以判断是否为conv2d，使用相应的初始化方式
+    elif isinstance(m, nn.Conv2d):
+        nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+     # 是否为批归一化层
+    elif isinstance(m, nn.BatchNorm2d):
+        nn.init.constant_(m.weight, 1)
+        nn.init.constant_(m.bias, 0)
 
 class FixedDiscriminator(nn.Module):
     def __init__(self, resolution, fmaps_base=8192, fmaps_max=512):
@@ -345,6 +355,7 @@ class FixedDiscriminator(nn.Module):
         for block_idx in range(self.resolution_log2, 1, -1):
             self.add_module(f'block{block_idx}', block(self.resolution, self.get_nf(block_idx-1), self.get_nf(block_idx-2)))
             self.resolution = self.resolution // 2
+        self.apply(weight_init)
 
     def get_nf(self, res):
         """Gets number of feature maps according to current resolution."""
@@ -355,18 +366,18 @@ class FixedDiscriminator(nn.Module):
         for block_idx in range(self.resolution_log2, 1, -1):
             x = self.__getattr__(f'block{block_idx}')(x)
         return x
+
 class h_layer(nn.Module):
     def __init__(self, resolution, fmaps_base=8192, fmaps_max=128):
         super(h_layer, self).__init__()
         self.fmaps_base = fmaps_base
         self.fmaps_max = fmaps_max
         self.resolution = resolution
-        self.resolution_log2 = int(np.log2(self.resolution))
+        self.resolution_log2 = int(np.log2(self.resolution)) #2**8=256
         self.add_module(f'fromrgb', FirstConvBlock(self.get_nf(self.resolution_log2-1)))
         for block_idx in range(self.resolution_log2, 6, -1):
             self.add_module(f'block{block_idx}', block(self.resolution, self.get_nf(block_idx-1), self.get_nf(block_idx-2)))
             self.resolution = self.resolution // 2
-
     def get_nf(self, res):
         """Gets number of feature maps according to current resolution."""
         return min(int(self.fmaps_base / (2.0 ** res)), self.fmaps_max)
@@ -377,11 +388,20 @@ class h_layer(nn.Module):
         for block_idx in range(self.resolution_log2, 6, -1):
             x = self.__getattr__(f'block{block_idx}')(x)
         return x
+
 if __name__ == '__main__':
-    x = torch.rand(16, 3, 256, 256).cuda()
-    model = h_layer(256).cuda()
-    batch_size = 16
+    # x = torch.rand(1, 3, 256, 256).cuda()
+    x=torch.ones(1,3,256,256).cuda()
+    # myh_layer = nn.Sequential(
+    #     FirstConvBlock(64),  # [bn,3,256,256]->[bn,64,256,256]
+    #     block(256, 64, 128),  # [,64,256,256]->[,128,128,128]
+    #     block(128, 128, 128),  # [,128,128,128]->[,128,64,64]
+    # )
+    model = FixedDiscriminator(256).cuda()
+
+    # batch_size = 1
     # summary(model, input_size=(batch_size, 3, 256, 256))
     # print(model)
-    # out = model(x)
-    # print(out.shape)
+    out = model(x)
+    print(out)
+    print(out.shape)

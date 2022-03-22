@@ -2,12 +2,11 @@
 import os
 os.chdir('/home/xsy/idinvert_pytorch-mycode/') # convenient for debug
 import argparse
-import torch
 from datetime import datetime
-os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 
 from training.misc import EasyDict
-from training.train_gan_loop import training_loop
+from training.trainingloop_e2style_network import training_loop
 from utils.logger import setup_logger
 from tensorboardX import SummaryWriter
 
@@ -21,9 +20,9 @@ def main():
                         help='the name of the model')
     parser.add_argument('--dataset_name', type=str, default='ffhq',
                         help='the name of the training dataset (defaults; ffhq)')
-    parser.add_argument('--train_batch_size', type=int, default=26,
+    parser.add_argument('--train_batch_size', type=int, default=16,
                         help='training batch size')
-    parser.add_argument('--test_batch_size', type=int, default=20,
+    parser.add_argument('--test_batch_size', type=int, default=16,
                         help='training batch size')
     parser.add_argument('--gpu_ids', type=list, default=[0,1],
                         help='list of gpus')
@@ -48,7 +47,7 @@ def main():
         size = args.image_size
         min_val = -1.0
         max_val = 1.0
-        split=9600 #65000
+        split=1000 #65000
     datasets_args = Config()
 
     loss_args=EasyDict(loss_pix_weight=1.0,loss_w_weight=0.5,loss_dst_weight=1.0,loss_feat_weight=0.00005) #0.5
@@ -58,7 +57,7 @@ def main():
     Dhat_lr_args = EasyDict(learning_rate=args.lrDhat, decay_step=3000, decay_rate=0.8, stair=False)
 
     current_time = datetime.now().strftime('%b%d_%H-%M')
-    prefix = 'fDAL-FFHQ-InitEncoder_StyleD'
+    prefix = 'fDAL-FFHQ-e2StyleEncoder_StyleD'
     parm='_clipgrad_bs_%s_epoch%s_regcoef%s_%s_%s_adam%s_DIV_%s'%(args.train_batch_size,args.nepoch,loss_args.loss_pix_weight,loss_args.loss_w_weight,loss_args.loss_dst_weight,args.adam,args.divergence)
     args.save_images = os.path.join(args.save_root, prefix  + current_time+parm, 'save_images')
     args.save_models = os.path.join(args.save_root, prefix + current_time+parm, 'save_models')

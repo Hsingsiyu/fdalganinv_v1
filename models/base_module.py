@@ -154,7 +154,7 @@ class BaseModule(object):
   def load(self):
     """Loads pre-trained weights."""
     self.logger.info(f'Loading pytorch weights from `{self.weight_path}`.')
-    state_dict = torch.load(self.weight_path)
+    state_dict = torch.load(self.weight_path,map_location=torch.device("cpu"))
     for var_name in self.model_specific_vars:
       state_dict[var_name] = self.net.state_dict()[var_name]
     self.net.load_state_dict(state_dict)  # false

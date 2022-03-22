@@ -44,12 +44,12 @@ class StyleGANDiscriminator(BaseDiscriminator):
 
     def build(self):
         self.fmaps_base = getattr(self, 'fmaps_base', 8192)
-        self.fmaps_max = getattr(self, 'fmaps_max', 512)
-        self.net=Discriminator(image_size=256)
-        # self.net = FixedDiscriminator(
-        #     resolution=self.resolution,
-        #     fmaps_base=self.fmaps_base,
-        #     fmaps_max=self.fmaps_max)
+        self.fmaps_max = getattr(self, 'fmaps_max', 128)
+        # self.net=Discriminator(image_size=256)
+        self.net = FixedDiscriminator(
+            resolution=self.resolution,
+            fmaps_base=self.fmaps_base,
+            fmaps_max=self.fmaps_max)
 
     def _encode(self, images):
         if not isinstance(images, np.ndarray):

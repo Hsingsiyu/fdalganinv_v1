@@ -1,7 +1,7 @@
 import datasets.celebahq
 from models.stylegan_generator import StyleGANGenerator
 from models.perceptual_model import PerceptualModel
-from models.stylegan_encoder import StyleGANEncoder
+from models.e2style_encoders_network import BackboneEncoderFirstStage
 from models.stylegan_discriminator_network2 import h_layers
 from training.misc import EasyDict
 
@@ -78,24 +78,26 @@ def training_loop(
 
     # construct model
     G = StyleGANGenerator(config.model_name, logger, gpu_ids=config.gpu_ids,local_rank=config.local_rank)
-    E = StyleGANEncoder(config.model_name, logger, gpu_ids=config.gpu_ids,local_rank=config.local_rank)
     F = PerceptualModel(min_val=-1, max_val=1, gpu_ids=config.gpu_ids,local_rank=config.local_rank)
 
     F.net.eval()
     D=h_layers(config.image_size,fmaps_max=128)
     D_hat = copy.deepcopy(D)  # [bn,128,h/16.w/16]
+    E = BackboneEncoderFirstStage(num_layers=50,mode='ir_se') #todo 可能需要调整参数  要有记录，其实n1 n2 n3 也可以改
 
     D.cuda()
     D_hat.cuda()
-    #DDP前先送入GPU
+    E.cuda()
+
     if config.gpu_ids is not None:
         assert len(config.gpu_ids) > 1
         D = DDP(D, device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
         D_hat =DDP(D_hat, device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
+        E=DDP(E, device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
 
 
     # load parameter
-    E.net.apply(weight_init)
+    E.apply(weight_init)
     D.apply(weight_init)
     D_hat.apply(lambda self_: self_.reset_parameters() if hasattr(self_, 'reset_parameters') else None)
 
@@ -104,7 +106,7 @@ def training_loop(
     encode_dim = [G.num_layers, G.w_space_dim]
 
     # setup optimizer
-    optimizer_E = torch.optim.Adam(E.net.parameters(), lr=E_lr_args.learning_rate, **opt_args)
+    optimizer_E = torch.optim.Adam(E.parameters(), lr=E_lr_args.learning_rate, **opt_args)
     optimizer_D = torch.optim.Adam(D.parameters(), lr=D_lr_args.learning_rate, **opt_args)
 
     if config.adam:
@@ -115,7 +117,7 @@ def training_loop(
 
     if config.netE!='':
         with torch.no_grad():
-            E.net.load_state_dict(torch.load(config.netE,map_location=torch.device("cpu")))
+            E.load_state_dict(torch.load(config.netE,map_location=torch.device("cpu")))
 
     if config.netD_hat!='':
         with torch.no_grad():
@@ -146,8 +148,6 @@ def training_loop(
         with open(os.path.join(config.save_logs, "config.json"), 'w') as gcfg:
             gcfg.write(json.dumps(generator_config)+"\n")
 
-
-
     l_func = nn.L1Loss(reduction='none')
     phistar_gf = lambda t: ConjugateDualFunction(config.divergence).fstarT(t)
 
@@ -157,15 +157,11 @@ def training_loop(
         data_iter = iter(train_dataloader)
         i=0
         if epoch<50:
-            image_snapshot_step=200
+            image_snapshot_step=300
         else:
             image_snapshot_step=image_snapshot_ticks
 
         while i<len(train_dataloader):
-            # if (E_iterations + 1) % 300 == 0:
-            #     D_iters = 1
-            # else:
-            #     D_iters = config.D_iters
             j = 0
             while j < D_iters and i < len(train_dataloader):
                 j += 1
@@ -179,8 +175,8 @@ def training_loop(
                 ############################
                 # (1) Update D' network
                 ############################
-                w_s = E.net(x_s).view(batch_size, *encode_dim)
-                w_t = E.net(x_t).view(batch_size, *encode_dim)
+                w_s = E(x_s)
+                w_t = E(x_t)
 
                 xrec_s = G.net.synthesis(w_s)
                 xrec_t = G.net.synthesis(w_t)
@@ -211,14 +207,15 @@ def training_loop(
             ############################
             # (2) Update E,D network
             ############################
-            x_s = data['x_s']
-            x_t = data['x_t']
-            x_s = x_s.float().cuda(non_blocking=True)
-            x_t = x_t.float().cuda(non_blocking=True)
+            x_s = data['x_s'].float().cuda(non_blocking=True)
+            x_t = data['x_t'].float().cuda(non_blocking=True)
+
+            # x_s = x_s.float().cuda(non_blocking=True)
+            # x_t = x_t.float().cuda(non_blocking=True)
             batch_size = x_t.shape[0]
 
-            w_s=E.net(x_s).view(batch_size, *encode_dim)
-            w_t=E.net(x_t).view(batch_size, *encode_dim)
+            w_s=E(x_s)
+            w_t=E(x_t)
 
             xrec_s = G.net.synthesis(w_s)
             xrec_t = G.net.synthesis(w_t)
@@ -231,6 +228,7 @@ def training_loop(
                 x_feat = F.net(x_s)
                 x_rec_feat = F.net(xrec_s)
                 loss_feat = torch.mean((x_feat - x_rec_feat) ** 2)
+
             # task loss in pixel and code
             task_loss_pix = mytask_loss_(x_s, xrec_s)  # L(x_s,G(E(x_s)))
             task_loss_w = mytask_loss_(features_s, source_label)  # L(h(x),hGE(x))
@@ -246,10 +244,11 @@ def training_loop(
             optimizer_D.zero_grad()
             loss_E=loss_pix_weight*task_loss_pix+loss_w_weight*task_loss_w+loss_dst_weight*dst+loss_feat_weight*loss_feat
             loss_E.backward()
-            nn.utils.clip_grad_norm_(E.net.parameters(), 10)
+            nn.utils.clip_grad_norm_(E.parameters(), 10)
             nn.utils.clip_grad_norm_(D.parameters(), 10)
             optimizer_E.step()
             optimizer_D.step()
+
             E_iterations+=1
             if writer and config.local_rank==0:
                 writer.add_scalar('min/pixel', task_loss_pix.item(), global_step=E_iterations)
@@ -279,21 +278,19 @@ def training_loop(
                     if val_step > config.test_save_step:
                         break
                     with torch.no_grad():
-                        x_s = val_items['x_s']
-                        x_t = val_items['x_t']
-
-                        x_s = x_s.float().cuda()
-                        x_t = x_t.float().cuda()
+                        x_s = val_items['x_s'].float().cuda()
+                        x_t = val_items['x_t'].float().cuda()
 
                         batch_size = x_t.shape[0]
 
-                        w_s = E.net(x_s).view(batch_size, *encode_dim)
-                        w_t = E.net(x_t).view(batch_size, *encode_dim)
+                        w_s = E(x_s)
+                        w_t = E(x_t)
 
                         xrec_s = G.net.synthesis(w_s)
                         xrec_t = G.net.synthesis(w_t)
 
                         x_all = torch.cat([x_s, xrec_s, x_t, xrec_t], dim=0)
+
                     save_filename = f'epoch_{epoch:03d}_step_{i:04d}_test_{val_step:04d}.png'
                     save_filepath = os.path.join(config.save_images, save_filename)
                     tvutils.save_image(tensor=x_all, fp=save_filepath, nrow=batch_size, normalize=True,
@@ -308,7 +305,7 @@ def training_loop(
         if (epoch+1) %100 == 0 and config.local_rank==0:
             save_filename = f'styleganinv_encoder_epoch_{epoch:03d}.pth'
             save_filepath = os.path.join(config.save_models, save_filename)
-            torch.save(E.net.state_dict(), save_filepath)
+            torch.save(E.state_dict(), save_filepath)
             checkpoint = {"h_hat": D_hat.state_dict(),
                           "h":D.state_dict(),
                           "optD_hat": optimizer_Dhat.state_dict(),

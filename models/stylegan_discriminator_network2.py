@@ -21,7 +21,7 @@ _AUTO_FUSED_SCALE_MIN_RES = 128
 # Default gain factor for weight scaling.
 _WSCALE_GAIN = np.sqrt(2.0)
 
-#from torchinfo import summary
+from torchinfo import summary
 
 class StyleGANDiscriminator(nn.Module):
     """Defines the discriminator network in StyleGAN.
@@ -54,19 +54,14 @@ class StyleGANDiscriminator(nn.Module):
                  minibatch_std_channels=1,
                  fmaps_base=16 << 10,
                  fmaps_max=512):
-        """Initializes with basic settings.
-        Raises:
-            ValueError: If the `resolution` is not supported, or `fused_scale`
-                is not supported.
-        """
         super().__init__()
 
-        if resolution not in _RESOLUTIONS_ALLOWED:
-            raise ValueError(f'Invalid resolution: `{resolution}`!\n'
-                             f'Resolutions allowed: {_RESOLUTIONS_ALLOWED}.')
-        if fused_scale not in _FUSED_SCALE_ALLOWED:
-            raise ValueError(f'Invalid fused-scale option: `{fused_scale}`!\n'
-                             f'Options allowed: {_FUSED_SCALE_ALLOWED}.')
+        # if resolution not in _RESOLUTIONS_ALLOWED:
+        #     raise ValueError(f'Invalid resolution: `{resolution}`!\n'
+        #                      f'Resolutions allowed: {_RESOLUTIONS_ALLOWED}.')
+        # if fused_scale not in _FUSED_SCALE_ALLOWED:
+        #     raise ValueError(f'Invalid fused-scale option: `{fused_scale}`!\n'
+        #                      f'Options allowed: {_FUSED_SCALE_ALLOWED}.')
 
         self.init_res = _INIT_RES
         self.init_res_log2 = int(np.log2(self.init_res))
@@ -88,8 +83,7 @@ class StyleGANDiscriminator(nn.Module):
         for res_log2 in range(self.final_res_log2, self.init_res_log2 - 1, -1):
             res = 2 ** res_log2
             block_idx = self.final_res_log2 - res_log2
-
-            # Input convolution layer for each resolution.FromRGB
+            # Input convolution layer for each resolution.
             self.add_module(
                 f'input{block_idx}',
                 ConvBlock(in_channels=self.image_channels,
@@ -169,13 +163,13 @@ class StyleGANDiscriminator(nn.Module):
         return min(self.fmaps_base // res, self.fmaps_max)
 
     def forward(self, image, label=None, lod=None, **_unused_kwargs):
-        expected_shape = (self.image_channels, self.resolution, self.resolution)
-        if image.ndim != 4 or image.shape[1:] != expected_shape:
-            raise ValueError(f'The input tensor should be with shape '
-                             f'[batch_size, channel, height, width], where '
-                             f'`channel` equals to {self.image_channels}, '
-                             f'`height`, `width` equal to {self.resolution}!\n'
-                             f'But `{image.shape}` is received!')
+        # expected_shape = (self.image_channels, self.resolution, self.resolution)
+        # if image.ndim != 4 or image.shape[1:] != expected_shape:
+        #     raise ValueError(f'The input tensor should be with shape '
+        #                      f'[batch_size, channel, height, width], where '
+        #                      f'`channel` equals to {self.image_channels}, '
+        #                      f'`height`, `width` equal to {self.resolution}!\n'
+        #                      f'But `{image.shape}` is received!')
 
         lod = self.lod.cpu().tolist() if lod is None else lod
         if lod + self.init_res_log2 > self.final_res_log2:
@@ -534,7 +528,6 @@ class ConvBlock(nn.Module):
         Raises:
             NotImplementedError: If the `activation_type` is not supported.
         """
-
         super().__init__()
 
         if minibatch_std_group_size > 1:
@@ -668,21 +661,21 @@ class DenseBlock(nn.Module):
         return x
 
 
-if __name__ == '__main__':
-    # x = torch.rand(1, 3, 256, 256).cuda()
-    x=torch.randn(1,3,256,256).cuda()
-    # model = StyleGANDiscriminator(256,fmaps_max=128).cuda()
-    model=h_layers(256,fmaps_max=128).cuda()
-#[bn,1]
-    # batch_size = 16
-    # summary(model, input_size=(2, 3, 256, 256))
-    # print(model)
-    outx = model(x)
-    print(outx)
+# if __name__ == '__main__':
+#     x = torch.rand(64, 1, 14, 512).cuda()
+#     # z=torch.randn(1,1,14,512).cuda()#[bn,14,152]
+#     model = StyleGANDiscriminator(14,fmaps_max=128).cuda()
+#     # model=h_layers(256,fmaps_max=128).cuda()
+# #[bn,1]
+#     # batch_size = 16
+#     # summary(model, input_size=(2, 3, 256, 256))
+#     # print(model)
+#     outx = model(x)
+#     print(outx.shape)
 
-    y= torch.randn(1, 3, 256, 256).cuda()
-    outy = model(y)
-    print(outy)
+    # y= torch.randn(1, 3, 256, 256).cuda()
+    # outy = model(y)
+    # print(outy)
 
 
-    print((outx-outy))
+    # print((outx-outy))

@@ -222,15 +222,15 @@ class TruncationModule(nn.Module):
     if w.ndim == 2:
       if self.repeat_w:
         assert w.shape[1] == self.w_space_dim
-        w = w.view(-1, 1, self.w_space_dim).repeat(1, self.num_layers, 1)
+        x = w.view(-1, 1, self.w_space_dim).repeat(1, self.num_layers, 1)
       else:
         assert w.shape[1] == self.w_space_dim * self.num_layers
-        w = w.view(-1, self.num_layers, self.w_space_dim)
+        x = w.view(-1, self.num_layers, self.w_space_dim)
     assert w.ndim == 3 and w.shape[1:] == (self.num_layers, self.w_space_dim)
     if self.use_truncation:
       w_avg = self.w_avg.view(1, 1, self.w_space_dim)
-      w = w_avg + (w - w_avg) * self.truncation
-    return w
+      x = w_avg + (w - w_avg) * self.truncation
+    return x
 
 
 class SynthesisModule(nn.Module):
@@ -758,3 +758,21 @@ class DenseBlock(nn.Module):
     x = self.wscale(x)
     x = self.activate(x)
     return x
+if __name__ == '__main__':
+    # x = torch.rand(1, 3, 256, 256).cuda()
+
+    # myh_layer = nn.Sequential(
+    #     FirstConvBlock(64),  # [bn,3,256,256]->[bn,64,256,256]
+    #     block(256, 64, 128),  # [,64,256,256]->[,128,128,128]
+    #     block(128, 128, 128),  # [,128,128,128]->[,128,64,64]
+    #
+    G = StyleGANGeneratorNet(256).cuda()#The input tensor should be with shape [batch_size, num_layers, w_space_dim],
+    encode_dim = [1,G.num_layers, G.w_space_dim]
+    print(encode_dim)
+    z= torch.rand(encode_dim).cuda()
+    # batch_size = 1
+    # summary(model, input_size=(batch_size, 3, 256, 256))
+    # print(model)
+    out = G.synthesis(z)
+    # print(out)
+    print(out.shape)

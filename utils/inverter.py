@@ -212,7 +212,7 @@ class StyleGANInverter(object):
     z = torch.Tensor(init_z).to(self.run_device)
     x_init_inv = self.G.net.synthesis(z)
     viz_results.append(self.G.postprocess(_get_tensor_value(x_init_inv))[0])
-    return
+    return z.astype(np.float32),viz_results
 
   def easy_invert(self, image, num_viz=0):
     """Wraps functions `preprocess()` and `invert()` together."""

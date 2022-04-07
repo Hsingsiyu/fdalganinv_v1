@@ -9,19 +9,16 @@ import torch
 
 from models.stylegan_generator import StyleGANGenerator
 from models.stylegan_encoder import StyleGANEncoder
-from models.perceptual_model import PerceptualModel
+from models.e2style_encoders_network import BackboneEncoderFirstStage
+# from models.perceptual_model import PerceptualModel
+from utils.lpips.lpips import LPIPS
 
 __all__ = ['StyleGANInverter']
 
 
-def _softplus(x):
-  """Implements the softplus function."""
-  return torch.nn.functional.softplus(x, beta=1, threshold=10000)
-
 def _get_tensor_value(tensor):
   """Gets the value of a torch Tensor."""
   return tensor.cpu().detach().numpy()
-
 
 class StyleGANInverter(object):
   """Defines the class for StyleGAN inversion.
@@ -45,7 +42,7 @@ class StyleGANInverter(object):
                learning_rate=1e-2,
                iteration=100,
                reconstruction_loss_weight=1.0,
-               perceptual_loss_weight=5e-5,
+               lpips_loss_weight=0.8,
                regularization_loss_weight=2.0,
                logger=None):
     """Initializes the inverter.
@@ -72,19 +69,17 @@ class StyleGANInverter(object):
     self.gan_type = 'stylegan'
 
     self.G = StyleGANGenerator(self.model_name, self.logger)
-    self.E = StyleGANEncoder(self.model_name, self.logger)
-    self.F = PerceptualModel(min_val=self.G.min_val, max_val=self.G.max_val)
+    self.G.net.synthesis.eval()
+    self.E = BackboneEncoderFirstStage(num_layers=50,mode='ir_se').cuda().eval()
+    self.Lpips_loss = LPIPS(net_type='alex').cuda().eval()
     self.encode_dim = [self.G.num_layers, self.G.w_space_dim]
     self.run_device = self.G.run_device
-    assert list(self.encode_dim) == list(self.E.encode_dim)
-
-    assert self.G.gan_type == self.gan_type
-    assert self.E.gan_type == self.gan_type
+    # assert list(self.encode_dim) == list(self.E.encode_dim)
 
     self.learning_rate = learning_rate
     self.iteration = iteration
     self.loss_pix_weight = reconstruction_loss_weight
-    self.loss_feat_weight = perceptual_loss_weight
+    self.loss_lpips_weight = lpips_loss_weight
     self.loss_reg_weight = regularization_loss_weight
     assert self.loss_pix_weight > 0
 
@@ -92,8 +87,8 @@ class StyleGANInverter(object):
   def preprocess(self, image):
     """Preprocesses a single image.
 
-    This function assumes the input numpy array is with shape [height, width,
-    channel], channel order `RGB`, and pixel range [0, 255].
+    This function assumes the input numpy array is with shape [height, width,channel],
+    channel order `RGB`, and pixel range [0, 255].
 
     The returned image is with shape [channel, new_height, new_width], where
     `new_height` and `new_width` are specified by the given generative model.
@@ -160,7 +155,6 @@ class StyleGANInverter(object):
         steps.
     """
     x = image[np.newaxis]
-    x = image[np.newaxis]
     x = self.G.to_tensor(x.astype(np.float32))
     x.requires_grad = False
     init_z = self.get_init_code(image)
@@ -183,17 +177,15 @@ class StyleGANInverter(object):
       loss = loss + loss_pix * self.loss_pix_weight
       log_message = f'loss_pix: {_get_tensor_value(loss_pix):.3f}'
 
-      # Perceptual loss.
+      # lpips loss.
       if self.loss_feat_weight:
-        x_feat = self.F.net(x)
-        x_rec_feat = self.F.net(x_rec)
-        loss_feat = torch.mean((x_feat - x_rec_feat) ** 2)
-        loss = loss + loss_feat * self.loss_feat_weight
-        log_message += f', loss_feat: {_get_tensor_value(loss_feat):.3f}'
+        loss_lpips = self.Lpips_loss(x, x_rec)
+        loss = loss + loss_lpips * self.loss_lpips_weight
+        log_message += f', loss_feat: {_get_tensor_value(loss_lpips):.3f}'
 
       # Regularization loss.
       if self.loss_reg_weight:
-        z_rec = self.E.net(x_rec).view(1, *self.encode_dim)
+        z_rec = self.E.net(x_rec)
         loss_reg = torch.mean((z - z_rec) ** 2)
         loss = loss + loss_reg * self.loss_reg_weight
         log_message += f', loss_reg: {_get_tensor_value(loss_reg):.3f}'
@@ -214,6 +206,13 @@ class StyleGANInverter(object):
         viz_results.append(self.G.postprocess(_get_tensor_value(x_rec))[0])
 
     return _get_tensor_value(z), viz_results
+  def easy_inti_code(self,image):
+    viz_results = []
+    init_z = self.get_init_code(self.preprocess(image))
+    z = torch.Tensor(init_z).to(self.run_device)
+    x_init_inv = self.G.net.synthesis(z)
+    viz_results.append(self.G.postprocess(_get_tensor_value(x_init_inv))[0])
+    return
 
   def easy_invert(self, image, num_viz=0):
     """Wraps functions `preprocess()` and `invert()` together."""

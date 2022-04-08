@@ -124,15 +124,16 @@ class BackboneEncoderFirstStage(Module):
         self.output_layer_3 = Sequential(BatchNorm2d(256),
                                          torch.nn.AdaptiveAvgPool2d((7, 7)),
                                          Flatten(),
-                                         Linear(256 * 7 * 7, 512 * 5))
+                                         Linear(256 * 7 * 7, 512 * 7))
         self.output_layer_4 = Sequential(BatchNorm2d(128),
                                          torch.nn.AdaptiveAvgPool2d((7, 7)),
                                          Flatten(),
-                                         Linear(128 * 7 * 7, 512 * 5))
+                                         Linear(128 * 7 * 7, 512 * 4))
         self.output_layer_5 = Sequential(BatchNorm2d(64),
                                          torch.nn.AdaptiveAvgPool2d((7, 7)),
                                          Flatten(),
-                                         Linear(64 * 7 * 7, 512 * 4))
+                                         Linear(64 * 7 * 7, 512 * 3))
+		# 3,4,5: 5 5 4 ,papaer:9 5 4 ,  now:6,4,4, 7,4,3
         modules = []
         for block in blocks:
             for bottleneck in block:
@@ -146,13 +147,13 @@ class BackboneEncoderFirstStage(Module):
         x = self.input_layer(x)
         for l in self.modulelist[:3]:
           x = l(x)
-        lc_part_4 = self.output_layer_5(x).view(-1, 4, 512)
+        lc_part_4 = self.output_layer_5(x).view(-1, 3, 512)
         for l in self.modulelist[3:7]:
           x = l(x)
-        lc_part_3 = self.output_layer_4(x).view(-1, 5, 512)
+        lc_part_3 = self.output_layer_4(x).view(-1, 4, 512)
         for l in self.modulelist[7:21]:
           x = l(x)
-        lc_part_2 = self.output_layer_3(x).view(-1, 5, 512)
+        lc_part_2 = self.output_layer_3(x).view(-1, 7, 512)
 
         x = torch.cat((lc_part_2, lc_part_3, lc_part_4), dim=1)
         return x

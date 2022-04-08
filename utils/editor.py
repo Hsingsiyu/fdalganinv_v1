@@ -84,10 +84,16 @@ def interpolate(src_codes, dst_codes, step=5):
   num = src_codes.shape[0]
   code_shape = src_codes.shape[1:]
 
-  a = src_codes[:, np.newaxis]
+  a = src_codes[:, np.newaxis]# [num, *code_shape,1]
   b = dst_codes[:, np.newaxis]
   l = np.linspace(0.0, 1.0, step).reshape(
       [step if axis == 1 else 1 for axis in range(a.ndim)])
+  # out = []
+  # for  axis in range(a.ndim):
+  #   if axis == 1:
+  #     out.append(step)
+  #   else:
+  #     out.append(1)
   results = a + l * (b - a)
   assert results.shape == (num, step, *code_shape)
 

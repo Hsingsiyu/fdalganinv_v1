@@ -158,7 +158,7 @@ class BaseModule(object):
     for var_name in self.model_specific_vars:
       state_dict[var_name] = self.net.state_dict()[var_name]
     self.net.load_state_dict(state_dict)  # false
-    print(self.net.load_state_dict(state_dict))
+    # print(self.net.load_state_dict(state_dict))
     self.logger.info(f'Successfully loaded!')
     # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # self.net.to(device)

@@ -54,18 +54,18 @@ def setup_logger(work_dir=None, logfile_name='log.txt', logger_name='logger'):
 
   work_dir = work_dir or DEFAULT_WORK_DIR
   logfile_name = os.path.join(work_dir, logfile_name)
-  if os.path.isfile(logfile_name):
-    print(f'Log file `{logfile_name}` has already existed!')
-    while True:
-      decision = input(f'Would you like to overwrite it (Y/N): ')
-      decision = decision.strip().lower()
-      if decision == 'n':
-        raise SystemExit(f'Please specify another one.')
-      if decision == 'y':
-        logger.warning(f'Overwriting log file `{logfile_name}`!')
-        break
-
-  os.makedirs(work_dir, exist_ok=True)
+  # if os.path.isfile(logfile_name):
+  #   print(f'Log file `{logfile_name}` has already existed!')
+  #   while True:
+  #     decision = input(f'Would you like to overwrite it (Y/N): ')
+  #     decision = decision.strip().lower()
+  #     if decision == 'n':
+  #       raise SystemExit(f'Please specify another one.')
+  #     if decision == 'y':
+  #       logger.warning(f'Overwriting log file `{logfile_name}`!')
+  #       break
+  if not os.path.exists(work_dir):
+    os.makedirs(work_dir, exist_ok=True)
 
   # Save log message with all levels in log file.
   fh = logging.FileHandler(logfile_name)

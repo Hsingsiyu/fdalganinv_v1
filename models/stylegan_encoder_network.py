@@ -1,6 +1,5 @@
 # python 3.7
 """Contains the implementation of encoder for StyleGAN inversion.
-
 For more details, please check the paper:
 https://arxiv.org/pdf/2004.00049.pdf
 """
@@ -22,7 +21,6 @@ _INIT_RES = 4
 
 class StyleGANEncoderNet(nn.Module):
   """Defines the encoder network for StyleGAN inversion.
-
   NOTE: The encoder takes images with `RGB` color channels and range [-1, 1]
   as inputs, and encode the input images to W+ space of StyleGAN.
   """
@@ -35,9 +33,7 @@ class StyleGANEncoderNet(nn.Module):
                encoder_channels_max=1024,
                use_wscale=False,
                use_bn=False):
-      
     """Initializes the encoder with basic settings.
-
     Args:
       resolution: The resolution of the input image.
       w_space_dim: The dimension of the disentangled latent vectors, w.
@@ -49,7 +45,6 @@ class StyleGANEncoderNet(nn.Module):
         of encoder. (default: 1024)
       use_wscale: Whether to use `wscale` layer. (default: False)
       use_bn: Whether to use batch normalization layer. (default: False)
-
     Raises:
       ValueError: If the input `resolution` is not supported.
     """
@@ -123,7 +118,6 @@ class StyleGANEncoderNet(nn.Module):
 
 class AveragePoolingLayer(nn.Module):
   """Implements the average pooling layer.
-
   Basically, this layer can be used to downsample feature maps from spatial
   domain.
   """
@@ -143,7 +137,6 @@ class BatchNormLayer(nn.Module):
 
   def __init__(self, channels, gamma=False, beta=True, decay=0.9, epsilon=1e-5):
     """Initializes with basic settings.
-
     Args:
       channels: Number of channels of the input tensor.
       gamma: Whether the scale (weight) of the affine mapping is learnable.
@@ -166,7 +159,6 @@ class BatchNormLayer(nn.Module):
 
 class WScaleLayer(nn.Module):
   """Implements the layer to scale weight variable and add bias.
-
   NOTE: The weight variable is trained in `nn.Conv2d` layer (or `nn.Linear`
   layer), and only scaled with a constant number, which is not trainable in
   this layer. However, the bias variable is trainable in this layer.
@@ -229,7 +221,6 @@ class FirstBlock(nn.Module):
 
 class ResBlock(nn.Module):
   """Implements the residual block.
-
   Usually, each residual block contains two convolutional layers, each of which
   is followed by batch normalization layer and activation layer.
   """
@@ -242,7 +233,6 @@ class ResBlock(nn.Module):
                use_bn=False,
                activation_type='lrelu'):
     """Initializes the class with block settings.
-
     Args:
       in_channels: Number of channels of the input tensor fed into this block.
       out_channels: Number of channels of the output tensor.
@@ -253,7 +243,6 @@ class ResBlock(nn.Module):
       wscale_gain: The gain factor for `wscale` layer.
       use_bn: Whether to use batch normalization layer.
       activation_type: Type of activation. Support `linear` and `lrelu`.
-
     Raises:
       NotImplementedError: If the input `activation_type` is not supported.
     """
@@ -351,10 +340,3 @@ class LastBlock(nn.Module):
     x = self.fc(x) * self.scale
     x = x.view(x.shape[0], x.shape[1], 1, 1)
     return self.bn(x).view(x.shape[0], x.shape[1])
-
-
-if __name__ == '__main__':
-  x = torch.rand(16, 3, 256, 256).cuda()
-  E = StyleGANEncoderNet(256).cuda()
-  out = E(x)
-  print(out.shape)

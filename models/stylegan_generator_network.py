@@ -6,7 +6,6 @@ https://arxiv.org/pdf/1812.04948.pdf
 """
 
 import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -767,12 +766,12 @@ if __name__ == '__main__':
     #     block(128, 128, 128),  # [,128,128,128]->[,128,64,64]
     #
     G = StyleGANGeneratorNet(256).cuda()#The input tensor should be with shape [batch_size, num_layers, w_space_dim],
-    encode_dim = [1,G.num_layers, G.w_space_dim]
-    print(encode_dim)
-    z= torch.rand(encode_dim).cuda()
+    # encode_dim = [1,G.num_layers, G.w_space_dim]
+    # print(encode_dim)
+    # z= torch.rand(encode_dim).cuda()
     # batch_size = 1
-    # summary(model, input_size=(batch_size, 3, 256, 256))
+    # summary(G.synthesis, torch.randn(batch_size, 14,512).cuda())
     # print(model)
-    out = G.synthesis(z)
+    # out = G.synthesis(z)
     # print(out)
-    print(out.shape)
+    # print(out.shape)

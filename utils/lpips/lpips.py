@@ -1,14 +1,14 @@
 import torch
 import torch.nn as nn
 
-from networks import get_network, LinLayers
+from .networks import get_network, LinLayers
 # from utils import get_state_dict
 from collections import OrderedDict
 
 
 def get_state_dict(net_type: str = 'alex', version: str = '0.1'):
-    old_state_dict = torch.load('models/pretain/alex.pth',
-                                map_location= torch.device('cpu'))
+    old_state_dict = torch.load('/home/xsy/idinvert_pytorch-mycode/models/pretrain/alex.pth',
+                                map_location=torch.device("cpu"))
 
     # rename keys
     new_state_dict = OrderedDict()

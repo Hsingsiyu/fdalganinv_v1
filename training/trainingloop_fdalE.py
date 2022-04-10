@@ -107,8 +107,8 @@ def training_loop(
 
     l_func = nn.L1Loss(reduction='none')
     phistar_gf = lambda t: ConjugateDualFunction(config.divergence).fstarT(t)
-    if loss_lpi_weight > 0:
-        Lpips_loss = LPIPS(net_type='alex').cuda().eval()
+    # if loss_lpi_weight > 0:
+    #     Lpips_loss = LPIPS(net_type='alex').cuda().eval()
     # construct model
     G = StyleGANGenerator(config.model_name, logger, gpu_ids=config.gpu_ids,local_rank=config.local_rank)
     F = PerceptualModel(min_val=-1, max_val=1, gpu_ids=config.gpu_ids,local_rank=config.local_rank)
@@ -128,8 +128,8 @@ def training_loop(
         D = DDP(D, device_ids=[config.local_rank], broadcast_buffers=False, find_unused_parameters=True)
         E_hat =DDP(E_hat, device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
         E=DDP(E, device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
-        if loss_lpi_weight > 0:
-            Lpips_loss=DDP(Lpips_loss,device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
+        # if loss_lpi_weight > 0:
+        #     Lpips_loss=DDP(Lpips_loss,device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
 
     # load parameter
     E.apply(weight_init)
@@ -233,7 +233,7 @@ def training_loop(
                 optimizer_Ehat.zero_grad()
                 optimizer_D.zero_grad()
                 adv_loss = loss_real +  loss_fake + 5 * loss_gp
-                loss_Ehat = -dst+adv_loss
+                loss_Ehat = -loss_dst_weight*dst+adv_loss
                 loss_Ehat.backward()
                 nn.utils.clip_grad_norm_(E_hat.parameters(), 10)
                 optimizer_Ehat.step()
@@ -279,8 +279,8 @@ def training_loop(
                 x_rec_feat = F.net(xrec_s)
                 loss_feat = torch.mean((x_feat - x_rec_feat) ** 2)
             loss_lpips=0
-            if loss_lpi_weight>0:
-                loss_lpips=Lpips_loss(x_s,xrec_s)
+            # if loss_lpi_weight>0:
+            #     loss_lpips=Lpips_loss(x_s,xrec_s)
             loss_adv = 0.
             if loss_adv_weight>0:
                 x_adv = D(xrec_s)

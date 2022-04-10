@@ -44,7 +44,8 @@ class StyleGANInverter(object):
                reconstruction_loss_weight=1.0,
                lpips_loss_weight=0.8,
                regularization_loss_weight=2.0,
-               logger=None):
+               logger=None,
+               E_type='baseline'):
     """Initializes the inverter.
 
     NOTE: Only Adam optimizer is supported in the optimization process.
@@ -70,7 +71,19 @@ class StyleGANInverter(object):
 
     self.G = StyleGANGenerator(self.model_name, self.logger)
     self.G.net.synthesis.eval()
-    self.E = BackboneEncoderFirstStage(num_layers=50,mode='ir_se').cuda().eval()
+    self.E_type=E_type
+    if self.E_type=='baseline':
+      self.E=StyleGANEncoder(self.model_name, self.logger)
+      self.E.net.eval()
+    else:
+      self.E = BackboneEncoderFirstStage(num_layers=50,mode='ir_se').cuda().eval()
+      checkpoint = torch.load('/home/xsy/idinvert_pytorch-mycode/fdaloutput/fDAL-FFHQ-e2StyleEncoder_StyleDApr05_13-33_clipgrad_bs_20_epoch3000_regcoef1.0_10_1.0_adamTrue_DIV_pearson/save_models/styleganinv_encoder_epoch_074.pth')
+      self.E.load_state_dict({k.replace('module.', ''): v for k, v in checkpoint.items()})
+      self.E.eval()
+    # self.E=StyleGANEncoder(self.model_name, self.logger)
+    # self.E.net.eval()
+    # self.E.load_state_dict(checkpoint)
+
     self.Lpips_loss = LPIPS(net_type='alex').cuda().eval()
     self.encode_dim = [self.G.num_layers, self.G.w_space_dim]
     self.run_device = self.G.run_device
@@ -133,7 +146,11 @@ class StyleGANInverter(object):
     """
     x = image[np.newaxis]
     x = self.G.to_tensor(x.astype(np.float32))
-    z = self.E.net(x)
+    # print(x.shape)
+    if self.E_type == 'baseline':
+      z = self.E.net(x)
+    else:
+      z = self.E(x)
     z = _get_tensor_value(z.view(1, *self.encode_dim))
     return z.astype(np.float32)
 
@@ -212,6 +229,7 @@ class StyleGANInverter(object):
     z = torch.Tensor(init_z).to(self.run_device)
     x_init_inv = self.G.net.synthesis(z)
     viz_results.append(self.G.postprocess(_get_tensor_value(x_init_inv))[0])
+    z = _get_tensor_value(z)
     return z.astype(np.float32),viz_results
 
   def easy_invert(self, image, num_viz=0):

@@ -21,8 +21,8 @@ from utils.visualizer import save_image, load_image, resize_image
 def parse_args():
   """Parses arguments."""
   parser = argparse.ArgumentParser()
-  parser.add_argument('model_name', type=str, help='Name of the GAN model.')
-  parser.add_argument('image_list', type=str,
+  parser.add_argument('model_name', default='styleganinv_ffhq256',type=str, help='Name of the GAN model.')
+  parser.add_argument('image_list', type=str,default='./examples/ffhq_inv.txt',
                       help='List of images to invert.')
   parser.add_argument('-o', '--output_dir', type=str, default='',
                       help='Directory to save the results. If not specified, '
@@ -30,14 +30,14 @@ def parse_args():
                            'will be used by default.')
   parser.add_argument('--learning_rate', type=float, default=0.01,
                       help='Learning rate for optimization. (default: 0.01)')
-  parser.add_argument('--num_iterations', type=int, default=100,
+  parser.add_argument('--num_iterations', type=int, default=0,
                       help='Number of optimization iterations. (default: 100)')
   parser.add_argument('--num_results', type=int, default=5,
                       help='Number of intermediate optimization results to '
                            'save for each sample. (default: 5)')
-  parser.add_argument('--loss_weight_feat', type=float, default=5e-5,
+  parser.add_argument('--loss_weight_feat', type=float, default=0.8,
                       help='The perceptual loss scale for optimization. '
-                           '(default: 5e-5)')
+                           '(default: 5e-5,0.8 for lpips)')
   parser.add_argument('--loss_weight_enc', type=float, default=2.0,
                       help='The encoder loss scale for optimization.'
                            '(default: 2.0)')
@@ -45,6 +45,8 @@ def parse_args():
                       help='Image size for visualization. (default: 256)')
   parser.add_argument('--gpu_id', type=str, default='0',
                       help='Which GPU(s) to use. (default: `0`)')
+  parser.add_argument('--E_type', type=str, default='ours',
+                      help='baseline or ours')
   return parser.parse_args()
 
 
@@ -54,7 +56,7 @@ def main():
   os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
   assert os.path.exists(args.image_list)
   image_list_name = os.path.splitext(os.path.basename(args.image_list))[0]
-  output_dir = args.output_dir or f'results/inversion/{image_list_name}'
+  output_dir = args.output_dir or f'results/inversion_{args.E_type}/test_{image_list_name}'
   logger = setup_logger(output_dir, 'inversion.log', 'inversion_logger')
 
   logger.info(f'Loading model.')
@@ -63,9 +65,10 @@ def main():
       learning_rate=args.learning_rate,
       iteration=args.num_iterations,
       reconstruction_loss_weight=1.0,
-      perceptual_loss_weight=args.loss_weight_feat,
+      lpips_loss_weight=args.loss_weight_feat,
       regularization_loss_weight=args.loss_weight_enc,
-      logger=logger)
+      logger=logger,
+      E_type=args.E_type)
   image_size = inverter.G.resolution
 
   # Load image list.
@@ -99,10 +102,14 @@ def main():
         code, viz_results=inverter.easy_inti_code(image)
     latent_codes.append(code)
     save_image(f'{output_dir}/{image_name}_ori.png', image)
-    save_image(f'{output_dir}/{image_name}_enc.png', viz_results[1])
+    if args.num_iterations > 0:
+        save_image(f'{output_dir}/{image_name}_enc.png', viz_results[1])
+    else:
+        save_image(f'{output_dir}/{image_name}_enc.png', viz_results[0])
 
     visualizer.set_cell(img_idx, 0, text=image_name)
     visualizer.set_cell(img_idx, 1, image=image)
+    visualizer.set_cell(img_idx, 2, image=viz_results[0])
     if args.num_iterations>0:
         save_image(f'{output_dir}/{image_name}_inv.png', viz_results[-1])
         for viz_idx, viz_img in enumerate(viz_results[1:]):

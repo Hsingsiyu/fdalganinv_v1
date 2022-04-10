@@ -1,6 +1,6 @@
 # --coding:utf-8--
 import os
-os.chdir('/home/xsy/idinvert_pytorch-mycode/') # convenient for debug
+# os.chdir('/home/xsy/idinvert_pytorch-mycode/')
 import argparse
 import torch
 from datetime import datetime
@@ -47,10 +47,10 @@ def main():
         size = args.image_size
         min_val = -1.0
         max_val = 1.0
-        split=50000 #65000
+        split=60000 #65000
     datasets_args = Config()
 
-    loss_args=EasyDict(loss_pix_weight=1.0,loss_w_weight=0.0,loss_dst_weight=1.0,loss_feat_weight=0.00005,loss_adv_weight=0.1,loss_lpi_weight=0.0) #0.5
+    loss_args=EasyDict(loss_pix_weight=1.0,loss_w_weight=0.0,loss_dst_weight=10.0,loss_feat_weight=0.00005,loss_adv_weight=0.1,loss_lpi_weight=0.0) #0.5
     opt_args = EasyDict(betas=(0.9, 0.99), eps=1e-8)
     E_lr_args = EasyDict(learning_rate=args.lrE, decay_step=3000, decay_rate=0.8, stair=False)
     D_lr_args = EasyDict(learning_rate=args.lrD, decay_step=3000, decay_rate=0.8, stair=False)

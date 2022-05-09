@@ -35,7 +35,6 @@ def weight_init(m):
     elif isinstance(m, nn.BatchNorm2d):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)
-
 def mytask_loss_(x, x_rec,cuda=False):
     loss=nn.L1Loss()
     error=loss(x,x_rec)
@@ -58,8 +57,6 @@ def div_loss_(D, real_x, fake_x, p=2):
         retain_graph=True,
         only_inputs=True,
     )[0]
-    # grad = grad.view(x_.shape[0], -1)
-    # div = (grad.norm(2, dim=1) ** p).mean()
     div = (grad * grad).sum(dim=1, keepdim=True).sum(dim=2, keepdim=True).sum(dim=3, keepdim=True)
     div = torch.mean(div)
     return div
@@ -83,7 +80,6 @@ def training_loop(
     Ehat_iterations=0
 
     loss_pix_weight=loss_args.loss_pix_weight
-    # loss_w_weight=loss_args.loss_w_weight
     loss_dst_weight=loss_args.loss_dst_weight
     loss_feat_weight=loss_args.loss_feat_weight
     loss_lpi_weight=loss_args.loss_lpi_weight
@@ -107,19 +103,19 @@ def training_loop(
 
     l_func = nn.L1Loss(reduction='none')
     phistar_gf = lambda t: ConjugateDualFunction(config.divergence).fstarT(t)
-    # if loss_lpi_weight > 0:
-    #     Lpips_loss = LPIPS(net_type='alex').cuda().eval()
+    if loss_lpi_weight > 0:
+        Lpips_loss = LPIPS(net_type='alex').cuda().eval()
     # construct model
     G = StyleGANGenerator(config.model_name, logger, gpu_ids=config.gpu_ids,local_rank=config.local_rank)
     F = PerceptualModel(min_val=-1, max_val=1, gpu_ids=config.gpu_ids,local_rank=config.local_rank)
     D=StyleGANDiscriminator(config.image_size,fmaps_max=128,minibatch_std_group_size=1)
     E = BackboneEncoderFirstStage(num_layers=50,mode='ir_se') #todo 可能需要调整参数  要有记录，其实n1 n2 n3 也可以改
+    #todo  试一试这个网路结构，因为它小。保留GANloss 和vggloss
     E_hat=copy.deepcopy(E)
 
     D.cuda().train()
     E.cuda().train()
     E_hat.cuda().train()
-
     F.net.eval()
     G.net.synthesis.eval()
 
@@ -128,12 +124,12 @@ def training_loop(
         D = DDP(D, device_ids=[config.local_rank], broadcast_buffers=False, find_unused_parameters=True)
         E_hat =DDP(E_hat, device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
         E=DDP(E, device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
-        # if loss_lpi_weight > 0:
-        #     Lpips_loss=DDP(Lpips_loss,device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
+        if loss_lpi_weight > 0:
+            Lpips_loss=DDP(Lpips_loss,device_ids=[config.local_rank],broadcast_buffers=False, find_unused_parameters=True)
 
     # load parameter
-    E.apply(weight_init)
     D.apply(weight_init)
+    E.apply(weight_init)
     E_hat.apply(lambda self_: self_.reset_parameters() if hasattr(self_, 'reset_parameters') else None)
 
     # encode_dim = [G.num_layers, G.w_space_dim]
@@ -154,6 +150,7 @@ def training_loop(
             checkpoint=torch.load(config.netD_hat,map_location=torch.device('cpu'))
         optimizer_Ehat.load_state_dict(checkpoint["optE_hat"])
         optimizer_E.load_state_dict((checkpoint["optE"]))
+        optimizer_D.load_state_dict(checkpoint["optD"])
         D.load_state_dict(checkpoint["D"])
         E_hat.load_state_dict(checkpoint["E_hat"])
         epoch_s=checkpoint["epoch"]
@@ -171,17 +168,13 @@ def training_loop(
     if config.local_rank==0:
         generator_config = {"imageSize": config.image_size, "dataset": config.dataset_name,"split":dataset_args.split ,"Dhat_iters":config.D_iters,
                             "train_bs": config.train_batch_size,"val_bs": config.test_batch_size,"div":config.divergence,"nepoch":config.nepoch,
-                            "lr_E":optimizer_E.state_dict()["param_groups"][0]["lr"],
-                            "lr_Dhat":optimizer_Ehat.state_dict()["param_groups"][0]["lr"],
+                            "lr_E":optimizer_E.state_dict()["param_groups"][0]["lr"],"lr_Dhat":optimizer_Ehat.state_dict()["param_groups"][0]["lr"],
                             "pix_weight":loss_args.loss_pix_weight,"w_weight":loss_args.loss_w_weight,"dst_weight":loss_args.loss_dst_weight,
-                            "adv_weight":loss_args.loss_adv_weight,
-                            "lpips_weight":loss_args.loss_lpi_weight,
+                            "adv_weight":loss_args.loss_adv_weight,"lpips_weight":loss_args.loss_lpi_weight,
                             "Edecay_rate":E_lr_args.decay_step, "Ehat_decay_rate":Ehat_lr_args.decay_step,
                             }
         with open(os.path.join(config.save_logs, "config.json"), 'w') as gcfg:
             gcfg.write(json.dumps(generator_config)+"\n")
-
-
 
     D_iters = config.D_iters
     for epoch in range(epoch_s,max_epoch):
@@ -204,7 +197,6 @@ def training_loop(
                 # print(x_s.shape)
                 x_s = x_s.float().cuda(non_blocking=True)
                 x_t = x_t.float().cuda(non_blocking=True)
-
                 ############################
                 # (1) Update D,E' network
                 ############################
@@ -224,17 +216,28 @@ def training_loop(
                 l_t = l_func(xrec_t, xrec_t_hat)
                 dst = torch.mean(l_s) - torch.mean(phistar_gf(l_t))
 
-                x_real=D(x_s)
-                x_fake=D(xrec_s.detach())
-                loss_real = GAN_loss(x_real, real=True)
-                loss_fake = GAN_loss(x_fake, real=False)
-                loss_gp = div_loss_(D, x_s, xrec_s.detach())
+                Discri_loss=0
+                if loss_adv_weight>0:
+                    x_real=D(x_s)
+                    x_fake=D(xrec_s.detach())
+                    loss_real = GAN_loss(x_real, real=True)
+                    loss_fake = GAN_loss(x_fake, real=False)
+                    loss_gp = div_loss_(D, x_s, xrec_s.detach())
+                    Discri_loss = 1 * loss_real + 1 * loss_fake + 5 * loss_gp
+                loss_all = 0.0
+                grad_D=torch.autograd.grad(outputs=Discri_loss,inputs=D.parameters(),create_graph=False,retain_graph=True,allow_unused=True)[0]
+                gradnorm_D= torch.norm(grad_D, dim=None)
 
+                grad_Ehat=torch.autograd.grad(outputs=dst,inputs=E_hat.parameters(),create_graph=False,retain_graph=True,allow_unused=True)[0]
+                gradnorm_Ehat= torch.norm(grad_Ehat, dim=None)
+                if gradnorm_D>0:
+                    loss_all+=torch.div(input=Discri_loss,other=gradnorm_D.detach())
+                if gradnorm_Ehat>0:
+                    loss_all+=torch.div(input=dst,other=gradnorm_Ehat.detach())
                 optimizer_Ehat.zero_grad()
                 optimizer_D.zero_grad()
-                adv_loss = loss_real +  loss_fake + 5 * loss_gp
-                loss_Ehat = -loss_dst_weight*dst+adv_loss
-                loss_Ehat.backward()
+                # loss_Ehat = -loss_dst_weight*dst+loss_adv_weight*Discri_loss
+                loss_all.backward()
                 nn.utils.clip_grad_norm_(E_hat.parameters(), 10)
                 optimizer_Ehat.step()
                 optimizer_D.step()
@@ -244,14 +247,18 @@ def training_loop(
                     lr_scheduler_Ehat.step()
                     lr_scheduler_D.step()
                 if writer and config.local_rank==0:
+                    writer.add_scalar('max/gradnormEhat', gradnorm_Ehat.item(), global_step=Ehat_iterations)
+                    writer.add_scalar('max/gradnormD', gradnorm_D.item(), global_step=Ehat_iterations)
                     writer.add_scalar('max/dst', dst.item(), global_step=Ehat_iterations)
                     writer.add_scalar('max/src', l_s.mean().item(), global_step=Ehat_iterations)
                     writer.add_scalar('max/trg', l_t.mean().item(), global_step=Ehat_iterations)
                     writer.add_scalar('max/d_real', loss_real.item(), global_step=Ehat_iterations)
                     writer.add_scalar('max/d_fake', loss_fake.item(), global_step=Ehat_iterations)
                     writer.add_scalar('max/d_gp', loss_gp.item(), global_step=Ehat_iterations)
+                    writer.add_scalar('max/d_loss', Discri_loss.item(), global_step=Ehat_iterations)
+
             ############################
-            # (2) Update E,D network
+            # (2) Update E network
             ############################
             x_s = data['x_s'].float().cuda(non_blocking=True)
             x_t = data['x_t'].float().cuda(non_blocking=True)
@@ -272,27 +279,49 @@ def training_loop(
             l_s = l_func(xrec_s, xrec_s_hat)
             l_t = l_func(xrec_t, xrec_t_hat)
             dst = torch.mean(l_s) - torch.mean(phistar_gf(l_t))
+            loss_all = 0.
+            grad_dst=torch.autograd.grad(outputs=dst, inputs=E.parameters(), create_graph=False, retain_graph=True,allow_unused=True)[0]
+            gradnorm_dst = torch.norm(grad_dst, dim=None)
+            if gradnorm_dst>0:
+                loss_all+=torch.div(input=dst,other=gradnorm_dst.detach())
 
             loss_feat = 0
             if loss_feat_weight>0:
                 x_feat = F.net(x_s)
                 x_rec_feat = F.net(xrec_s)
                 loss_feat = torch.mean((x_feat - x_rec_feat) ** 2)
-            loss_lpips=0
+            grad_vgg=torch.autograd.grad(outputs=loss_feat, inputs=E.parameters(), create_graph=False, retain_graph=True,allow_unused=True)[0]
+            gradnorm_vgg=torch.norm(grad_vgg)
+            if gradnorm_vgg>0:
+                loss_all+=torch.div(loss_feat,gradnorm_vgg.detach())
+
+            # loss_lpips=0.
             # if loss_lpi_weight>0:
             #     loss_lpips=Lpips_loss(x_s,xrec_s)
+
             loss_adv = 0.
             if loss_adv_weight>0:
                 x_adv = D(xrec_s)
                 loss_adv = GAN_loss(x_adv, real=True)
+            grad_adv=torch.autograd.grad(outputs=loss_adv, inputs=E.parameters(), create_graph=False, retain_graph=True,allow_unused=True)[0]
+            gradnorm_adv=torch.norm(grad_adv)
+            if gradnorm_adv>0:
+                loss_all+=torch.div(loss_adv,gradnorm_adv.detach())
 
             task_loss_pix=mytask_loss_(x_s,xrec_s)
+            grad_pix=torch.autograd.grad(outputs=task_loss_pix, inputs=E.parameters(), create_graph=False, retain_graph=True,allow_unused=True)[0]
+            gradnorm_pix=torch.norm(grad_pix)
+            if gradnorm_pix>0:
+                loss_all+=torch.div(task_loss_pix,gradnorm_pix.detach())
 
             optimizer_E.zero_grad()
-            loss_E=loss_pix_weight*task_loss_pix+loss_dst_weight*dst+loss_feat_weight*loss_feat+loss_lpi_weight*loss_lpips+loss_adv_weight*loss_adv
-            loss_E.backward()
+            optimizer_D.zero_grad()
+            loss_all.backward()
+            # loss_E=loss_pix_weight*task_loss_pix+loss_dst_weight*dst+loss_feat_weight*loss_feat+loss_lpi_weight*loss_lpips+loss_adv_weight*loss_adv
+            # loss_E.backward()
             nn.utils.clip_grad_norm_(E.parameters(), 10)
             optimizer_E.step()
+            optimizer_D.step()
 
             if writer and config.local_rank==0:
                 writer.add_scalar('min/pixel', task_loss_pix.item(), global_step=E_iterations)
@@ -303,7 +332,7 @@ def training_loop(
                 writer.add_scalar('min/adv',loss_adv.item(),global_step=E_iterations)
                 # writer.add_scalar('min/lpips',loss_lpips.item(),global_step=E_iterations)
             if config.local_rank==0:
-                log_message= f"[Task Loss:(pixel){task_loss_pix.cpu().detach().numpy():.5f}, D {loss_adv.cpu().detach().numpy():.5f},vgg {loss_feat.cpu().detach().numpy()},lpips{loss_lpips}" \
+                log_message= f"[Task Loss:(pixel){task_loss_pix.cpu().detach().numpy():.5f}, D {loss_adv.cpu().detach().numpy():.5f},vgg {loss_feat.cpu().detach().numpy()}" \
                          f", Fdal Loss:{dst.cpu().detach().numpy():.5f},src:{l_s.mean().cpu().detach().numpy():.5f},trg:{l_t.mean().cpu().detach().numpy():.5f}] "
             if logger and config.local_rank==0 :
                 logger.debug(f'Epoch:{epoch:03d}, '
@@ -326,12 +355,9 @@ def training_loop(
                     with torch.no_grad():
                         x_s = val_items['x_s'].float().cuda(non_blocking=True)
                         x_t = val_items['x_t'].float().cuda(non_blocking=True)
-
                         batch_size = x_t.shape[0]
-
                         w_s = E(x_s)
                         w_t = E(x_t)
-
                         xrec_s = G.net.synthesis(w_s)
                         xrec_t = G.net.synthesis(w_t)
                         loss_pix = torch.mean((x_s - xrec_s) ** 2)
@@ -341,11 +367,10 @@ def training_loop(
                         tvutils.save_image(tensor=x_all, fp=save_filepath, nrow=batch_size, normalize=True,scale_each=True)
                     if writer:
                         writer.add_scalar('test/pixel', loss_pix.item(), global_step=E_iterations)
-
             E_iterations+=1
             if E_iterations % E_lr_args.decay_step == 0 :
                 lr_scheduler_E.step()
-
+                lr_scheduler_D.step()
                     # lr_scheduler_Dhat.step()
 
 

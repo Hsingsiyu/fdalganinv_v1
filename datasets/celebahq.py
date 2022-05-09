@@ -24,14 +24,18 @@ class ImageDataset(data.Dataset):
         self.split=dataset_args.split # the number of training images e.g. 65000 training imgs for ffhq
         #self.unaligned =False  # paired(False) or unpaired (True)
         self.paired=paired
-        self.transform = trans.ToTensor()
+        self.transform = trans.Compose([trans.ToTensor(),trans.Normalize((0.5), (0.5)),])
         self.transform_t=trans.Compose([
-            trans.RandomApply([trans.RandomAffine(degrees=(-30, 30))], p=1),
+            trans.RandomApply([trans.RandomAffine(degrees=(-10, 10),resample=3)], p=1),
+            # transforms.Crop()
+            # transforms.Resize
             # trans.RandomGrayscale(p=0.2),
             # trans.RandomChoice(),
             # trans.RandomApply([trans.RandomResizedCrop(size=(256, 256), scale=(0.8, 1.0))], p=0.5),
             # trans.GaussianBlur(kernel_size=(5,9),sigma=(0.1,5))
             trans.ToTensor(),
+            trans.RandomErasing(p=1, scale=(0.01,0.05),inplace=True,value=(1,1,1)),
+            trans.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ])
         # self.files_s = sorted(glob.glob(os.path.join(self.root, '/Source') + '/*.*'))   # get the whole files in directory
         # self.files_t = sorted(glob.glob(os.path.join(self.root, '/Target') + '/*.*'))
@@ -64,8 +68,8 @@ class ImageDataset(data.Dataset):
         else:
             item_t = self.transform_t(Image.open(self.target_list[random.randint(0, len(self.files_t) - 1)]))
 
-        item_s=item_s*(self.max_val - self.min_val) + self.min_val
-        item_t=item_t*(self.max_val - self.min_val) + self.min_val
+        # item_s=item_s*(self.max_val - self.min_val) + self.min_val
+        # item_t=item_t*(self.max_val - self.min_val) + self.min_val
         return {'x_s': item_s, 'x_t': item_t}
 
     def __len__(self):

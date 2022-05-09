@@ -69,7 +69,7 @@ def main():
   # Load image, codes, and boundary.
   logger.info(f'Loading images and corresponding inverted latent codes.')
   image_list = []
-
+  #todo: ori.png inv.png
   with open(f'{image_dir}/image_list.txt', 'r') as f:
     for line in f:
       name = os.path.splitext(os.path.basename(line.strip()))[0]

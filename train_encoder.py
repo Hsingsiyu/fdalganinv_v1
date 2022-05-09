@@ -2,7 +2,7 @@
 
 
 import os
-os.chdir('/home/customer/hdd/students/xsy-fdal/') # convenient for debug
+os.chdir('/home/xsy/idinvert_pytorch-mycode') # convenient for debug
 import argparse
 from datetime import datetime
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
@@ -15,7 +15,7 @@ import torch
 a=torch.nn.NLLLoss2d()
 def main():
     parser = argparse.ArgumentParser(description='Training the in-domain encoder through pytorch')
-    parser.add_argument('--data_root', type=str, default='/home/customer/hdd/students/xsy-fdal/FFHQ',
+    parser.add_argument('--data_root', type=str, default='/home/xsy/FFHQ_256_png',
                         help='path to training data (.txt path file)')
     parser.add_argument('--num_gpus', type=int, default=4,
                          help='Number of GPUs to use during training (defaults: 8)')
@@ -35,7 +35,9 @@ def main():
                         help='list of gpus')
     parser.add_argument('--test_save_step', type=int, default=1,
                         help='how much step to be saved when inference')
-    parser.add_argument('--save_root', type=str, default='/home/customer/hdd/students/xsy-fdal/output')
+    parser.add_argument('--save_root', type=str, default='/home/xsy/idinvert_pytorch-mycode/idinvert_output')
+    parser.add_argument('--d_fmaps_max', type=int, default=128)
+
     args = parser.parse_args()
 
     current_time = datetime.now().strftime('%b%d_%H-%M')
@@ -58,6 +60,7 @@ def main():
         size = args.image_size
         min_val = -1.0
         max_val = 1.0
+        split=100
     datasets_args = Config()
 
     opt_args = EasyDict(betas=(0.9, 0.99), eps=1e-8)

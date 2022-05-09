@@ -56,7 +56,7 @@ def main():
   assert os.path.exists(dst_dir)
   assert os.path.exists(f'{dst_dir}/image_list.txt')
   assert os.path.exists(f'{dst_dir}/inverted_codes.npy')
-  output_dir = args.output_dir or 'results/interpolation'
+  output_dir = args.output_dir or 'results/interpolation/e2style'
   job_name = f'{src_dir_name}_TO_{dst_dir_name}'
   logger = setup_logger(output_dir, f'{job_name}.log', f'{job_name}_logger')
 

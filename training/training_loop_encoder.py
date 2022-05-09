@@ -169,6 +169,7 @@ def training_loop(
             x_fake = D(x_rec.detach())
             loss_real = GAN_loss(x_real, real=True)
             loss_fake = GAN_loss(x_fake, real=False)
+
             # gradient div
             loss_gp = div_loss_(D, x, x_rec.detach(), cuda=config.cuda)
 
@@ -286,5 +287,3 @@ def training_loop(
                         # "D":D.module.state_dict()}
             torch.save(checkpoint, save_filepath)
         #     torch.save(E.net.module.state_dict(), save_filepath)  #GPU
-
-        

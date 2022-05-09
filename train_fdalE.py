@@ -21,7 +21,7 @@ def main():
                         help='the name of the model')
     parser.add_argument('--dataset_name', type=str, default='ffhq',
                         help='the name of the training dataset (defaults; ffhq)')
-    parser.add_argument('--train_batch_size', type=int, default=12,
+    parser.add_argument('--train_batch_size', type=int, default=8,
                         help='training batch size')
     parser.add_argument('--test_batch_size', type=int, default=4,
                         help='training batch size')
@@ -47,7 +47,7 @@ def main():
         size = args.image_size
         min_val = -1.0
         max_val = 1.0
-        split=60000 #65000
+        split=65000 #65000
     datasets_args = Config()
 
     loss_args=EasyDict(loss_pix_weight=1.0,loss_w_weight=0.0,loss_dst_weight=10.0,loss_feat_weight=0.00005,loss_adv_weight=0.1,loss_lpi_weight=0.0) #0.5
@@ -75,8 +75,6 @@ def main():
         os.makedirs(args.save_logs)
     except OSError:
         pass
-    # if not os.path.exists(args.save_logs):
-    #     os.makedirs(args.save_logs)
     writer = SummaryWriter(os.path.join(args.save_root, prefix + current_time+parm))
 
     logger = setup_logger(args.save_logs, 'inversion.log', 'inversion_logger')

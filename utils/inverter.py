@@ -45,7 +45,8 @@ class StyleGANInverter(object):
                lpips_loss_weight=0.8,
                regularization_loss_weight=2.0,
                logger=None,
-               E_type='baseline'):
+               E_type='baseline',
+               netE=''):
     """Initializes the inverter.
 
     NOTE: Only Adam optimizer is supported in the optimization process.
@@ -74,15 +75,15 @@ class StyleGANInverter(object):
     self.E_type=E_type
     if self.E_type=='baseline':
       self.E=StyleGANEncoder(self.model_name, self.logger)
+      if netE!='':
+        checkpoint=torch.load(netE)
+        self.E.net.load_state_dict({k.replace('module.', ''): v for k, v in checkpoint.items()})
       self.E.net.eval()
     else:
       self.E = BackboneEncoderFirstStage(num_layers=50,mode='ir_se').cuda().eval()
       checkpoint = torch.load('/home/xsy/idinvert_pytorch-mycode/fdaloutput/fDAL-FFHQ-e2StyleEncoder_StyleDApr05_13-33_clipgrad_bs_20_epoch3000_regcoef1.0_10_1.0_adamTrue_DIV_pearson/save_models/styleganinv_encoder_epoch_074.pth')
       self.E.load_state_dict({k.replace('module.', ''): v for k, v in checkpoint.items()})
       self.E.eval()
-    # self.E=StyleGANEncoder(self.model_name, self.logger)
-    # self.E.net.eval()
-    # self.E.load_state_dict(checkpoint)
 
     self.Lpips_loss = LPIPS(net_type='alex').cuda().eval()
     self.encode_dim = [self.G.num_layers, self.G.w_space_dim]

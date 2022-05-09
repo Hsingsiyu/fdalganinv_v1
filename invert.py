@@ -22,7 +22,7 @@ def parse_args():
   """Parses arguments."""
   parser = argparse.ArgumentParser()
   parser.add_argument('model_name', default='styleganinv_ffhq256',type=str, help='Name of the GAN model.')
-  parser.add_argument('image_list', type=str,default='./examples/ffhq_inv.txt',
+  parser.add_argument('image_list', type=str,default='./examples/ffhq_inv_src.txt',
                       help='List of images to invert.')
   parser.add_argument('-o', '--output_dir', type=str, default='',
                       help='Directory to save the results. If not specified, '
@@ -45,8 +45,10 @@ def parse_args():
                       help='Image size for visualization. (default: 256)')
   parser.add_argument('--gpu_id', type=str, default='0',
                       help='Which GPU(s) to use. (default: `0`)')
-  parser.add_argument('--E_type', type=str, default='ours',
+  parser.add_argument('--E_type', type=str, default='baseline',
                       help='baseline or ours')
+  parser.add_argument('--netE', type=str, default='/home/xsy/idinvert_pytorch-mycode/fdaloutput/fDAL-FFHQ-InitEncoder_StyleDApr15_14-05_clipgrad_pretrain_bs_16_epoch3000_regcoef5.0_1_1.0_adamTrue_DIV_pearson/save_models/styleganinv_encoder_epoch_899.pth',
+                      help='path of encoder')
   return parser.parse_args()
 
 
@@ -56,7 +58,9 @@ def main():
   os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
   assert os.path.exists(args.image_list)
   image_list_name = os.path.splitext(os.path.basename(args.image_list))[0]
-  output_dir = args.output_dir or f'results/inversion_{args.E_type}/test_{image_list_name}'
+  net_name=os.path.splitext(os.path.basename(args.netE))[0]
+
+  output_dir = args.output_dir or f'results/inversion_{args.E_type}/{image_list_name}_{net_name}'
   logger = setup_logger(output_dir, 'inversion.log', 'inversion_logger')
 
   logger.info(f'Loading model.')
@@ -68,7 +72,8 @@ def main():
       lpips_loss_weight=args.loss_weight_feat,
       regularization_loss_weight=args.loss_weight_enc,
       logger=logger,
-      E_type=args.E_type)
+      E_type=args.E_type,
+      netE=args.netE)
   image_size = inverter.G.resolution
 
   # Load image list.

@@ -490,6 +490,10 @@ class DenseBlock(nn.Module):
         return x
 
 
+
+
+
+
 class h_layers(nn.Module):
     def __init__(self,
                  resolution,

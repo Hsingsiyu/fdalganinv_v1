@@ -44,7 +44,6 @@ def GAN_loss(scores_out, real=True):
     else:
         return torch.mean(F.softplus(scores_out))
 def div_loss_(D, real_x):
-
     x_ = real_x.requires_grad_(True)
     y_ = D(x_)
     # cal f'(x)
@@ -127,6 +126,9 @@ def training_loop(
     D.apply(weight_init)
     D_hat.apply(lambda self_: self_.reset_parameters() if hasattr(self_, 'reset_parameters') else None)
 
+    for p in E.net.parameters():
+        p.requires_grad = True
+
     Discri.train()
     E.net.train()
     G.net.synthesis.eval()
@@ -190,6 +192,10 @@ def training_loop(
         train_sampler.set_epoch(epoch)
         data_iter = iter(train_dataloader)
         i=0
+        if epoch<1:
+            image_snapshot_step=50
+        else:
+            image_snapshot_step=image_snapshot_ticks
         while i<len(train_dataloader):
             j = 0
             while j < D_iters and i < len(train_dataloader):
@@ -228,20 +234,31 @@ def training_loop(
                     loss_fake = GAN_loss(x_fake, real=False)
                     loss_gp = div_loss_(Discri, x_s)
                     Discri_loss = 1 * loss_real + 1 * loss_fake + 5 * loss_gp
+                loss_all = 0.0
+                grad_D=torch.autograd.grad(outputs=Discri_loss,inputs=Discri.parameters(),create_graph=False,retain_graph=True,allow_unused=True)[0]
+                gradnorm_D= torch.norm(grad_D, dim=None)
 
+                grad_hhat=torch.autograd.grad(outputs=dst,inputs=D_hat.parameters(),create_graph=False,retain_graph=True,allow_unused=True)[0]
+                gradnorm_hhat= torch.norm(grad_hhat, dim=None)
+
+                if gradnorm_D>0:
+                    loss_all+=torch.div(input=Discri_loss,other=gradnorm_D.detach())
+                if gradnorm_hhat>0:
+                    loss_all+=torch.div(input=dst,other=gradnorm_hhat.detach())
                 optimizer_Dhat.zero_grad()
                 optimizer_Discri.zero_grad()
-                loss_Dhat = -loss_dst_weight*dst+loss_adv_weight*Discri_loss
-                loss_Dhat.backward()
-                nn.utils.clip_grad_norm_(D_hat.parameters(), 10)
+                loss_all.backward()
+                # loss_Dhat.backward()
+                # nn.utils.clip_grad_norm_(D_hat.parameters(), 10)
                 optimizer_Dhat.step()
                 optimizer_Discri.step()
-
                 Dhat_iterations += 1
                 if (Dhat_iterations ) % Dhat_lr_args.decay_step == 0:
                     lr_scheduler_Dhat.step()
                     lr_scheduler_Discri.step()
                 if writer and config.local_rank==0:
+                    writer.add_scalar('max/normD', gradnorm_D.item(), global_step=Dhat_iterations)
+                    writer.add_scalar('max/normh', gradnorm_hhat.item(), global_step=Dhat_iterations)
                     writer.add_scalar('max/loss_real', loss_real.item(), global_step=Dhat_iterations)
                     writer.add_scalar('max/loss_fake', loss_fake.item(), global_step=Dhat_iterations)
                     writer.add_scalar('max/loss_gp', loss_gp.item(), global_step=Dhat_iterations)
@@ -267,15 +284,33 @@ def training_loop(
             source_label = D(x_s)  # h(x_s)
             features_s = D(xrec_s)
             features_t = D(xrec_t)
+
+            loss_all = 0.
             loss_feat = 0.
-            if loss_feat_weight:
+            if loss_feat_weight>0:
                 x_feat = F.net(x_s)
                 x_rec_feat = F.net(xrec_s)
                 loss_feat = torch.mean((x_feat - x_rec_feat) ** 2)
                 # grad_feat=torch.autograd.grad(outputs=loss_feat,inputs=E.net.parameters(),retain_graph=True,only_inputs=True,allow_unused=True,create_graph=True,)[0]
+            # grad_vgg=torch.autograd.grad(outputs=loss_feat, inputs= E.net.parameters(), create_graph=False, retain_graph=True,allow_unused=True)[0]
+            # gradnorm_vgg=torch.norm(grad_vgg)
+            if loss_feat_weight>0:
+                loss_all+=0.00005*loss_feat #torch.div(loss_feat,gradnorm_vgg.detach())
+
             # task loss in pixel and code
-            task_loss_pix = mytask_loss_(x_s, xrec_s)  # L(x_s,G(E(x_s)))
             task_loss_w = mytask_loss_(features_s, source_label)  # L(h(x),hGE(x))
+            grad_w=torch.autograd.grad(outputs=task_loss_w, inputs=itertools.chain(E.net.parameters(),D.parameters()), create_graph=False, retain_graph=True,allow_unused=True)[0]
+            gradnorm_w=torch.norm(grad_w)
+            if gradnorm_w>0:
+                loss_all+=torch.div(task_loss_w,gradnorm_w.detach())
+            print(gradnorm_w)
+            task_loss_pix = mytask_loss_(x_s.detach(), xrec_s)  # L(x_s,G(E(x_s)))
+            grad_pix=torch.autograd.grad(outputs=task_loss_pix, inputs=E.net.parameters(), create_graph=False, retain_graph=True,allow_unused=True)[0]
+            gradnorm_pix=torch.norm(grad_pix)
+            if gradnorm_pix>0:
+                loss_all+=torch.div(task_loss_pix,gradnorm_pix.detach())
+            print(gradnorm_pix)
+
 
             features_s_adv = D_hat(xrec_s)  # h'(GE(x_s))
             features_t_adv = D_hat(xrec_t)  # h'(GE(x_t))
@@ -283,17 +318,29 @@ def training_loop(
             l_s = l_func(features_s_adv, features_s)
             l_t = l_func(features_t_adv, features_t)
             dst =  torch.mean(l_s) - torch.mean(phistar_gf(l_t))
+            grad_dst =torch.autograd.grad(outputs=dst, inputs=itertools.chain(E.net.parameters(),D.parameters()), create_graph=False, retain_graph=True,
+                                allow_unused=True)[0]
+            gradnorm_dst = torch.norm(grad_dst, dim=None)
+            if loss_dst_weight>0:
+                loss_all+=torch.div(dst,gradnorm_dst.detach())
+            print(gradnorm_dst)
 
-            loss_adv=0
+            loss_adv = 0.
             if loss_adv_weight>0:
                 x_adv = Discri(xrec_s)
                 loss_adv = GAN_loss(x_adv, real=True)
+            grad_adv=torch.autograd.grad(outputs=loss_adv, inputs=E.net.parameters(), create_graph=False, retain_graph=True,allow_unused=True)[0]
+            gradnorm_adv=torch.norm(grad_adv)
+            if gradnorm_adv>0:
+                loss_all+=torch.div(loss_adv,gradnorm_adv.detach())
+            print(gradnorm_adv)
 
             optimizer_E.zero_grad()
             optimizer_D.zero_grad()
-            loss_E=loss_pix_weight*task_loss_pix+loss_w_weight*task_loss_w+loss_dst_weight*dst+loss_feat_weight*loss_feat+loss_adv_weight*loss_adv
-            loss_E.backward()
-            nn.utils.clip_grad_norm_(D.parameters(), 10)
+            # loss_E=loss_pix_weight*task_loss_pix+loss_w_weight*task_loss_w+loss_dst_weight*dst+loss_feat_weight*loss_feat+loss_adv_weight*loss_adv
+            # loss_E.backward()
+            loss_all.backward()
+            # nn.utils.clip_grad_norm_(D.parameters(), 10)
             optimizer_E.step()
             optimizer_D.step()
 
@@ -304,7 +351,13 @@ def training_loop(
                 writer.add_scalar('min/dst', dst.item(), global_step=E_iterations)
                 writer.add_scalar('min/src', l_s.mean().item(), global_step=E_iterations)
                 writer.add_scalar('min/trg', l_t.mean().item(), global_step=E_iterations)
-                writer.add_scalar('min/vgg',loss_feat,global_step=E_iterations)
+                writer.add_scalar('min/vgg',loss_feat.item(),global_step=E_iterations)
+                writer.add_scalar('min/gradpix',gradnorm_pix.item(),global_step=E_iterations)
+                writer.add_scalar('min/gradw',gradnorm_w,global_step=E_iterations)
+                writer.add_scalar('min/grad_adv',gradnorm_adv,global_step=E_iterations)
+                writer.add_scalar('min/grad_dst',gradnorm_dst,global_step=E_iterations)
+                # writer.add_scalar('min/gradvgg',gradnorm_vgg,global_step=E_iterations)
+
             if  config.local_rank==0:
                 log_message= f"[Task Loss:(pixel){task_loss_pix.cpu().detach().numpy():.5f}, h {task_loss_w.cpu().detach().numpy():.5f},vgg {loss_feat.cpu().detach().numpy()}" \
                          f", Fdal Loss:{dst.cpu().detach().numpy():.5f},src:{l_s.mean().cpu().detach().numpy():.5f},trg:{l_t.mean().cpu().detach().numpy():.5f}] "
@@ -359,7 +412,7 @@ def training_loop(
 
 
         if (epoch+1) %5 == 0 and config.local_rank==0:
-            save_filename = f'styleganinv_encoder_epoch_{epoch:03d}.pth'
+            save_filename = f'styleganinv_encoder_epoch_{epoch+1:03d}.pth'
             save_filepath = os.path.join(config.save_models, save_filename)
             torch.save(E.net.state_dict(), save_filepath)
             checkpoint = {"h_hat": D_hat.state_dict(),
